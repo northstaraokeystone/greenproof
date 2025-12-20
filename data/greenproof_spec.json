@@ -1,0 +1,11 @@
+{
+    "version": "1.0.0",
+    "unverifiable_target": 0.90,
+    "additionality_threshold": 0.95,
+    "double_count_tolerance": 0.0,
+    "compression_fraud_threshold": 0.70,
+    "compression_valid_threshold": 0.85,
+    "emissions_discrepancy_max": 0.10,
+    "registries": ["verra", "gold_standard", "american_carbon_registry", "climate_action_reserve"],
+    "verification_sources": ["satellite", "iot_sensors", "utility_data"]
+}

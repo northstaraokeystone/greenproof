@@ -1,0 +1,211 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "GreenProof Receipt Ledger Schema",
+    "description": "Schema for receipts.jsonl - append-only ledger of all GreenProof receipts",
+    "type": "object",
+    "required": ["receipt_type", "ts", "tenant_id", "payload_hash"],
+    "properties": {
+        "receipt_type": {
+            "type": "string",
+            "enum": [
+                "ingest",
+                "emissions_verify",
+                "carbon_credit",
+                "double_count",
+                "climate_validation",
+                "anomaly",
+                "anchor"
+            ],
+            "description": "Type of receipt"
+        },
+        "ts": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO8601 timestamp"
+        },
+        "tenant_id": {
+            "type": "string",
+            "description": "Tenant identifier for multi-tenancy"
+        },
+        "payload_hash": {
+            "type": "string",
+            "pattern": "^SHA256:[a-f0-9]{64}:BLAKE3:[a-f0-9]{64}$",
+            "description": "Dual-hash of payload in SHA256:BLAKE3 format"
+        }
+    },
+    "allOf": [
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "ingest" } }
+            },
+            "then": {
+                "required": ["source", "record_count"],
+                "properties": {
+                    "source": { "type": "string" },
+                    "record_count": { "type": "integer", "minimum": 0 },
+                    "metadata": { "type": "object" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "emissions_verify" } }
+            },
+            "then": {
+                "required": [
+                    "report_hash",
+                    "external_source_hashes",
+                    "match_score",
+                    "verified_value",
+                    "claimed_value",
+                    "discrepancy_pct",
+                    "status"
+                ],
+                "properties": {
+                    "report_hash": { "type": "string" },
+                    "external_source_hashes": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "match_score": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "verified_value": { "type": "number" },
+                    "claimed_value": { "type": "number" },
+                    "discrepancy_pct": { "type": "number", "minimum": 0 },
+                    "status": {
+                        "type": "string",
+                        "enum": ["verified", "flagged", "failed"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "carbon_credit" } }
+            },
+            "then": {
+                "required": [
+                    "credit_id",
+                    "registry",
+                    "project_type",
+                    "claimed_tonnes",
+                    "baseline_tonnes",
+                    "additionality_score",
+                    "vintage_year",
+                    "registry_status",
+                    "verification_status"
+                ],
+                "properties": {
+                    "credit_id": { "type": "string" },
+                    "registry": { "type": "string" },
+                    "project_type": { "type": "string" },
+                    "claimed_tonnes": { "type": "number", "minimum": 0 },
+                    "baseline_tonnes": { "type": "number", "minimum": 0 },
+                    "additionality_score": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "vintage_year": { "type": "integer" },
+                    "registry_status": {
+                        "type": "string",
+                        "enum": ["active", "retired", "cancelled"]
+                    },
+                    "verification_status": {
+                        "type": "string",
+                        "enum": ["verified", "flagged", "failed"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "double_count" } }
+            },
+            "then": {
+                "required": [
+                    "credit_id",
+                    "registries_checked",
+                    "occurrences",
+                    "is_unique",
+                    "merkle_position",
+                    "merkle_proof",
+                    "cross_registry_root"
+                ],
+                "properties": {
+                    "credit_id": { "type": "string" },
+                    "registries_checked": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "occurrences": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["registry", "owner_hash", "status"],
+                            "properties": {
+                                "registry": { "type": "string" },
+                                "owner_hash": { "type": "string" },
+                                "status": { "type": "string" }
+                            }
+                        }
+                    },
+                    "is_unique": { "type": "boolean" },
+                    "merkle_position": { "type": "string" },
+                    "merkle_proof": { "type": "string" },
+                    "cross_registry_root": { "type": "string" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "climate_validation" } }
+            },
+            "then": {
+                "required": [
+                    "compression_ratio",
+                    "entropy_signature",
+                    "physical_consistency",
+                    "validation_status"
+                ],
+                "properties": {
+                    "compression_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "entropy_signature": { "type": "number" },
+                    "physical_consistency": { "type": "boolean" },
+                    "validation_status": {
+                        "type": "string",
+                        "enum": ["valid", "suspicious", "fabricated"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "anomaly" } }
+            },
+            "then": {
+                "required": ["anomaly_type", "classification", "action", "details"],
+                "properties": {
+                    "anomaly_type": { "type": "string" },
+                    "classification": {
+                        "type": "string",
+                        "enum": ["warning", "violation", "critical"]
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["flag", "halt", "review"]
+                    },
+                    "details": { "type": "object" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "anchor" } }
+            },
+            "then": {
+                "required": ["merkle_root", "leaf_count", "anchor_type"],
+                "properties": {
+                    "merkle_root": { "type": "string" },
+                    "leaf_count": { "type": "integer", "minimum": 0 },
+                    "anchor_type": { "type": "string" }
+                }
+            }
+        }
+    ]
+}
