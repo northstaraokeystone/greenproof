@@ -1,0 +1,28 @@
+{
+  "version": "3.1.0",
+  "name": "Government Waste Elimination Engine",
+  "edition": "General Counsel",
+  "thresholds": {
+    "compression_valid": 0.85,
+    "compression_fraud": 0.70,
+    "entropy_safe_harbor": 0.90,
+    "probability_confidence_min": 0.75
+  },
+  "legal_compliance": {
+    "simulation_default": true,
+    "disclaimer_required": true,
+    "safe_harbor_logging": true,
+    "jurisdictional_fencing": true
+  },
+  "registries": [
+    "verra",
+    "american_carbon_registry",
+    "climate_action_reserve"
+  ],
+  "project_types": [
+    "lng_terminal",
+    "pipeline",
+    "nuclear_smr",
+    "refinery"
+  ]
+}

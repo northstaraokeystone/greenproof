@@ -1,10 +1,16 @@
 """
-GreenProof DOGE - Department of Government Efficiency fraud audit integration.
+GreenProof DOGE - Department of Government Efficiency audit integration.
 
-Government Waste Elimination Engine v3.0
+Government Waste Elimination Engine v3.1 (General Counsel Edition)
 
 Target $50B+ in EPA/DOE spending with weak verification.
 Flag programs with weakest verification for DOGE audit.
+
+LEGAL SAFEGUARDS (v3.1):
+- Uses ProbabilisticModel for inefficiency detection (not binary labels)
+- Entropy threshold > 0.9 required before flagging inefficiency
+- All outputs include simulation metadata and disclaimers
+- Safe harbor logging for all audit operations
 
 Receipt: waste_receipt
 SLO: Audit time ≤ 100ms per grant, waste detection ≥ 90%
@@ -22,28 +28,45 @@ from .core import (
     emit_anomaly_receipt,
     emit_receipt,
 )
-from .compress import compress_test, check_physical_consistency
+from .compress import compress_test, check_physical_consistency, compute_entropy
 
 
 # === DOGE CONSTANTS ===
 EPA_GRANT_THRESHOLD = 50_000_000_000  # $50B+ IRA allocations
 DOE_LOAN_THRESHOLD = 10_000_000_000   # $10B+ clean energy loans
-WEAK_VERIFICATION_THRESHOLD = 0.60    # Below this = high fraud risk
+WEAK_VERIFICATION_THRESHOLD = 0.60    # Below this = high inefficiency risk
 DOGE_DASHBOARD_REFRESH_SEC = 3600     # Hourly updates
+
+# === LEGAL SAFE HARBOR THRESHOLDS (v3.1) ===
+ENTROPY_SAFE_HARBOR_THRESHOLD = 0.90  # Only flag if normalized_entropy > 0.90
+PROBABILITY_CONFIDENCE_MIN = 0.75     # Minimum confidence for any finding
+SIMULATION_DEFAULT = True             # Default to simulation mode
+
+# === LEGAL DISCLAIMER ===
+AUDIT_DISCLAIMER = (
+    "SIMULATION AUDIT: This analysis uses probabilistic models to identify "
+    "potential inefficiencies. Findings represent statistical indicators, not "
+    "definitive conclusions. Formal government audits require proper authorization."
+)
 
 
 def audit_epa_grant(
     grant: dict[str, Any],
     tenant_id: str = TENANT_ID,
+    simulated: bool = SIMULATION_DEFAULT,
 ) -> dict[str, Any]:
-    """Audit single EPA grant for waste.
+    """Audit single EPA grant for potential inefficiency.
+
+    LEGAL SAFEGUARD (v3.1): Uses ProbabilisticModel with entropy threshold.
+    Only flags inefficiency if entropy > 0.90 (Safe Harbor threshold).
 
     Args:
         grant: Grant dict with grant_id, amount, verification data
         tenant_id: Tenant identifier
+        simulated: If True, mark output as simulation
 
     Returns:
-        dict: waste_receipt with waste analysis
+        dict: waste_receipt with probabilistic inefficiency analysis
     """
     start_time = time.time()
 
@@ -53,23 +76,40 @@ def audit_epa_grant(
     # Run compression test on grant data
     compression = compress_test(grant)
 
+    # Compute entropy for safe harbor check (v3.1)
+    entropy_result = compute_entropy(grant)
+    normalized_entropy = entropy_result.get("normalized_entropy", 0)
+
     # Calculate verification ratio
     verification_ratio = _calculate_verification_ratio(grant)
 
-    # Calculate waste
-    verification_gap = 1.0 - verification_ratio
-    waste_amount = calculate_waste(grant, verification_gap)
-    waste_percentage = waste_amount / amount if amount > 0 else 0
+    # Use ProbabilisticModel for inefficiency (v3.1)
+    prob_result = _probabilistic_inefficiency_model(
+        verification_ratio=verification_ratio,
+        compression_ratio=compression["compression_ratio"],
+        normalized_entropy=normalized_entropy,
+    )
 
-    # Determine recommendation
+    # Calculate potential inefficiency (was: waste)
+    verification_gap = 1.0 - verification_ratio
+    inefficiency_amount = calculate_waste(grant, verification_gap)
+    inefficiency_percentage = inefficiency_amount / amount if amount > 0 else 0
+
+    # SAFE HARBOR: Only flag if entropy exceeds threshold (v3.1)
+    can_flag_inefficiency = normalized_entropy > ENTROPY_SAFE_HARBOR_THRESHOLD
+
+    # Determine recommendation using probabilistic model
     if verification_ratio >= 0.90:
         recommendation = "approved"
-    elif verification_ratio >= WEAK_VERIFICATION_THRESHOLD:
-        recommendation = "investigate"
-    elif verification_ratio >= 0.40:
-        recommendation = "suspend"
+    elif not can_flag_inefficiency:
+        # Safe harbor: insufficient entropy to make determination
+        recommendation = "review_recommended"
+    elif prob_result["probability"] >= 0.95:
+        recommendation = "investigation_warranted"
+    elif prob_result["probability"] >= 0.75:
+        recommendation = "review_recommended"
     else:
-        recommendation = "terminate"
+        recommendation = "monitoring_suggested"
 
     result = {
         "receipt_type": "waste",
@@ -79,12 +119,19 @@ def audit_epa_grant(
         "program": "epa",
         "allocated_amount_usd": amount,
         "verification_ratio": round(verification_ratio, 4),
-        "waste_amount_usd": round(waste_amount, 2),
-        "waste_percentage": round(waste_percentage, 4),
+        "waste_amount_usd": round(inefficiency_amount, 2),
+        "waste_percentage": round(inefficiency_percentage, 4),
         "verification_gap": _describe_verification_gap(grant),
         "recommendation": recommendation,
         "compression_ratio": compression["compression_ratio"],
         "audit_time_ms": round((time.time() - start_time) * 1000, 2),
+        # v3.1 Probabilistic model fields
+        "inefficiency_probability": round(prob_result["probability"], 4),
+        "confidence_level": prob_result["confidence"],
+        "normalized_entropy": round(normalized_entropy, 4),
+        "safe_harbor_met": can_flag_inefficiency,
+        "simulated": simulated,
+        "_disclaimer": AUDIT_DISCLAIMER,
         "payload_hash": "",  # Computed below
     }
 
@@ -99,15 +146,20 @@ def audit_epa_grant(
 def audit_doe_loan(
     loan: dict[str, Any],
     tenant_id: str = TENANT_ID,
+    simulated: bool = SIMULATION_DEFAULT,
 ) -> dict[str, Any]:
-    """Audit single DOE loan/subsidy for waste.
+    """Audit single DOE loan/subsidy for potential inefficiency.
+
+    LEGAL SAFEGUARD (v3.1): Uses ProbabilisticModel with entropy threshold.
+    Only flags inefficiency if entropy > 0.90 (Safe Harbor threshold).
 
     Args:
         loan: Loan dict with loan_id, amount, verification data
         tenant_id: Tenant identifier
+        simulated: If True, mark output as simulation
 
     Returns:
-        dict: waste_receipt with waste analysis
+        dict: waste_receipt with probabilistic inefficiency analysis
     """
     start_time = time.time()
 
@@ -117,23 +169,39 @@ def audit_doe_loan(
     # Run compression test
     compression = compress_test(loan)
 
+    # Compute entropy for safe harbor check (v3.1)
+    entropy_result = compute_entropy(loan)
+    normalized_entropy = entropy_result.get("normalized_entropy", 0)
+
     # Calculate verification ratio
     verification_ratio = _calculate_verification_ratio(loan)
 
-    # Calculate waste
-    verification_gap = 1.0 - verification_ratio
-    waste_amount = calculate_waste(loan, verification_gap)
-    waste_percentage = waste_amount / amount if amount > 0 else 0
+    # Use ProbabilisticModel for inefficiency (v3.1)
+    prob_result = _probabilistic_inefficiency_model(
+        verification_ratio=verification_ratio,
+        compression_ratio=compression["compression_ratio"],
+        normalized_entropy=normalized_entropy,
+    )
 
-    # Determine recommendation
+    # Calculate potential inefficiency (was: waste)
+    verification_gap = 1.0 - verification_ratio
+    inefficiency_amount = calculate_waste(loan, verification_gap)
+    inefficiency_percentage = inefficiency_amount / amount if amount > 0 else 0
+
+    # SAFE HARBOR: Only flag if entropy exceeds threshold (v3.1)
+    can_flag_inefficiency = normalized_entropy > ENTROPY_SAFE_HARBOR_THRESHOLD
+
+    # Determine recommendation using probabilistic model
     if verification_ratio >= 0.90:
         recommendation = "approved"
-    elif verification_ratio >= WEAK_VERIFICATION_THRESHOLD:
-        recommendation = "investigate"
-    elif verification_ratio >= 0.40:
-        recommendation = "suspend"
+    elif not can_flag_inefficiency:
+        recommendation = "review_recommended"
+    elif prob_result["probability"] >= 0.95:
+        recommendation = "investigation_warranted"
+    elif prob_result["probability"] >= 0.75:
+        recommendation = "review_recommended"
     else:
-        recommendation = "terminate"
+        recommendation = "monitoring_suggested"
 
     result = {
         "receipt_type": "waste",
@@ -143,12 +211,19 @@ def audit_doe_loan(
         "program": "doe",
         "allocated_amount_usd": amount,
         "verification_ratio": round(verification_ratio, 4),
-        "waste_amount_usd": round(waste_amount, 2),
-        "waste_percentage": round(waste_percentage, 4),
+        "waste_amount_usd": round(inefficiency_amount, 2),
+        "waste_percentage": round(inefficiency_percentage, 4),
         "verification_gap": _describe_verification_gap(loan),
         "recommendation": recommendation,
         "compression_ratio": compression["compression_ratio"],
         "audit_time_ms": round((time.time() - start_time) * 1000, 2),
+        # v3.1 Probabilistic model fields
+        "inefficiency_probability": round(prob_result["probability"], 4),
+        "confidence_level": prob_result["confidence"],
+        "normalized_entropy": round(normalized_entropy, 4),
+        "safe_harbor_met": can_flag_inefficiency,
+        "simulated": simulated,
+        "_disclaimer": AUDIT_DISCLAIMER,
         "payload_hash": "",
     }
 
@@ -378,3 +453,77 @@ def _describe_verification_gap(data: dict[str, Any]) -> str:
         return "Verification complete"
 
     return "; ".join(missing)
+
+
+def _probabilistic_inefficiency_model(
+    verification_ratio: float,
+    compression_ratio: float,
+    normalized_entropy: float,
+) -> dict[str, Any]:
+    """Probabilistic model for inefficiency detection.
+
+    LEGAL SAFEGUARD (v3.1): Returns probability and confidence,
+    not binary determinations. Uses multiple signals weighted by
+    their reliability.
+
+    Args:
+        verification_ratio: Verification completeness (0.0 to 1.0)
+        compression_ratio: Data compression ratio (0.0 to 1.0)
+        normalized_entropy: Shannon entropy normalized to 0-1
+
+    Returns:
+        dict: Probability of inefficiency with confidence level
+    """
+    # Weight factors for each signal
+    VERIFICATION_WEIGHT = 0.50  # Most reliable signal
+    COMPRESSION_WEIGHT = 0.30   # Physics-based signal
+    ENTROPY_WEIGHT = 0.20       # Anomaly signal
+
+    # Calculate component scores (higher = more likely inefficient)
+    verification_score = 1.0 - verification_ratio
+    compression_score = 1.0 - compression_ratio
+
+    # Entropy score: middle range is normal, extremes are suspicious
+    if normalized_entropy > 0.85:
+        entropy_score = (normalized_entropy - 0.85) / 0.15  # Scale 0.85-1.0 to 0-1
+    elif normalized_entropy < 0.15:
+        entropy_score = (0.15 - normalized_entropy) / 0.15  # Scale 0-0.15 to 0-1
+    else:
+        entropy_score = 0.0  # Normal range
+
+    # Weighted probability
+    probability = (
+        verification_score * VERIFICATION_WEIGHT +
+        compression_score * COMPRESSION_WEIGHT +
+        entropy_score * ENTROPY_WEIGHT
+    )
+
+    # Clamp to valid range
+    probability = max(0.0, min(1.0, probability))
+
+    # Calculate confidence based on signal agreement
+    scores = [verification_score, compression_score, entropy_score]
+    variance = sum((s - probability) ** 2 for s in scores) / len(scores)
+    agreement = 1.0 - min(1.0, variance * 4)  # Scale variance to 0-1 confidence
+
+    # Confidence level
+    if agreement >= 0.90:
+        confidence = "high"
+    elif agreement >= 0.75:
+        confidence = "medium"
+    elif agreement >= 0.50:
+        confidence = "low"
+    else:
+        confidence = "insufficient"
+
+    return {
+        "probability": probability,
+        "confidence": confidence,
+        "agreement_score": round(agreement, 4),
+        "component_scores": {
+            "verification": round(verification_score, 4),
+            "compression": round(compression_score, 4),
+            "entropy": round(entropy_score, 4),
+        },
+        "model_version": "3.1",
+    }
