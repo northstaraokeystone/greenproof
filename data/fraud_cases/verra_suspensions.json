@@ -1,0 +1,43 @@
+{
+    "case_id": "verra-suspensions-2024",
+    "name": "Verra 2024 Project Suspensions",
+    "date": "2024-09",
+    "jurisdiction": "Global",
+    "description": "Summary of Verra registry project suspensions and investigations in 2024",
+    "key_facts": {
+        "projects_suspended": 47,
+        "total_credits_affected_tco2e": 12500000,
+        "primary_issues": [
+            "Baseline manipulation",
+            "Monitoring failures",
+            "Additionality concerns",
+            "Permanence reversals"
+        ],
+        "regions_affected": ["Brazil", "Indonesia", "Peru", "DRC"]
+    },
+    "fraud_indicators": {
+        "avg_compression_ratio": 0.58,
+        "double_counting_rate": 0.15,
+        "additionality_failure_rate": 0.42,
+        "permanence_reversal_rate": 0.23
+    },
+    "suspended_project_types": {
+        "redd": 28,
+        "afforestation": 8,
+        "avoided_deforestation": 6,
+        "cookstove": 5
+    },
+    "detection_signals": [
+        "Compression ratios consistently below verified threshold",
+        "Cross-registry matching found multiple registrations",
+        "Satellite analysis contradicted claimed forest cover",
+        "Third-party investigations revealed baseline inflation"
+    ],
+    "lessons_learned": [
+        "Satellite verification essential for all land-use projects",
+        "Cross-registry deduplication must be automated",
+        "Physics-based compression analysis catches systematic fraud",
+        "Independent verification bodies need oversight"
+    ],
+    "source": "Verra Registry Enforcement Reports 2024"
+}

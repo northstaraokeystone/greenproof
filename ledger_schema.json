@@ -1,13 +1,26 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "GreenProof Receipt Ledger Schema",
-    "description": "Schema for receipts.jsonl - append-only ledger of all GreenProof receipts",
+    "title": "GreenProof v2 Receipt Ledger Schema",
+    "description": "Schema for receipts.jsonl - append-only ledger of all GreenProof receipts (v2 Monte Carlo)",
     "type": "object",
     "required": ["receipt_type", "ts", "tenant_id", "payload_hash"],
     "properties": {
         "receipt_type": {
             "type": "string",
             "enum": [
+                "compression",
+                "registry",
+                "registry_fetch",
+                "registry_scan",
+                "fraud",
+                "listing",
+                "trade",
+                "custody",
+                "retirement",
+                "energy",
+                "ev",
+                "chain",
+                "violation",
                 "ingest",
                 "emissions_verify",
                 "carbon_credit",
@@ -36,6 +49,192 @@
     "allOf": [
         {
             "if": {
+                "properties": { "receipt_type": { "const": "compression" } }
+            },
+            "then": {
+                "required": ["claim_id", "compression_ratio", "classification"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "original_bits": { "type": "integer", "minimum": 0 },
+                    "compressed_bits": { "type": "integer", "minimum": 0 },
+                    "compression_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "classification": {
+                        "type": "string",
+                        "enum": ["verified", "suspect", "fraud_signal"]
+                    },
+                    "physics_extraction": {
+                        "type": "object",
+                        "properties": {
+                            "mass_co2_kg": { "type": "number" },
+                            "energy_avoided_mj": { "type": ["number", "null"] },
+                            "sequestration_rate_kg_per_year": { "type": ["number", "null"] },
+                            "project_duration_years": { "type": "number" }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "registry" } }
+            },
+            "then": {
+                "required": ["claim_id", "source_registry", "identity_hash", "duplicates_found"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "source_registry": { "type": "string" },
+                    "identity_hash": { "type": "string" },
+                    "duplicates_found": { "type": "integer", "minimum": 0 },
+                    "duplicate_registries": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "overlap_percentage": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "normalization_applied": { "type": "boolean" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "fraud" } }
+            },
+            "then": {
+                "required": ["claim_id", "fraud_score", "fraud_level", "recommendation"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "fraud_score": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "fraud_level": {
+                        "type": "string",
+                        "enum": ["clean", "suspect", "likely_fraud", "confirmed_fraud"]
+                    },
+                    "checks": { "type": "object" },
+                    "recommendation": {
+                        "type": "string",
+                        "enum": ["approve", "manual_review", "reject"]
+                    },
+                    "processing_time_ms": { "type": "number" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "listing" } }
+            },
+            "then": {
+                "required": ["claim_id", "listing_id", "status"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "listing_id": { "type": "string" },
+                    "fraud_receipt_hash": { "type": "string" },
+                    "quantity_tco2e": { "type": "number", "minimum": 0 },
+                    "price_per_tco2e": { "type": "number", "minimum": 0 },
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "sold", "retired", "delisted"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "trade" } }
+            },
+            "then": {
+                "required": ["trade_id", "listing_id", "buyer", "seller", "settlement_status"],
+                "properties": {
+                    "trade_id": { "type": "string" },
+                    "listing_id": { "type": "string" },
+                    "buyer": { "type": "string" },
+                    "seller": { "type": "string" },
+                    "quantity_tco2e": { "type": "number", "minimum": 0 },
+                    "price_total": { "type": "number", "minimum": 0 },
+                    "settlement_status": {
+                        "type": "string",
+                        "enum": ["pending", "settled", "failed"]
+                    },
+                    "custody_receipt_hash": { "type": "string" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "energy" } }
+            },
+            "then": {
+                "required": ["claim_id", "energy_type", "verification_status"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "energy_type": {
+                        "type": "string",
+                        "enum": ["fossil", "nuclear", "renewable", "lng", "solar", "wind"]
+                    },
+                    "production_mwh": { "type": "number", "minimum": 0 },
+                    "claimed_avoided_tco2e": { "type": "number" },
+                    "verified_avoided_tco2e": { "type": "number" },
+                    "discrepancy_pct": { "type": "number", "minimum": 0 },
+                    "verification_status": {
+                        "type": "string",
+                        "enum": ["verified", "discrepancy", "fraud"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "ev" } }
+            },
+            "then": {
+                "required": ["claim_id", "vehicle_count", "verification_status"],
+                "properties": {
+                    "claim_id": { "type": "string" },
+                    "vehicle_count": { "type": "integer", "minimum": 0 },
+                    "total_miles": { "type": "number", "minimum": 0 },
+                    "claimed_credits": { "type": "number" },
+                    "verified_credits": { "type": "number" },
+                    "charging_source_verified": { "type": "boolean" },
+                    "discrepancy_pct": { "type": "number", "minimum": 0 },
+                    "verification_status": {
+                        "type": "string",
+                        "enum": ["verified", "discrepancy", "fraud"]
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "chain" } }
+            },
+            "then": {
+                "required": ["merkle_root", "receipt_count"],
+                "properties": {
+                    "merkle_root": { "type": "string" },
+                    "receipt_count": { "type": "integer", "minimum": 0 },
+                    "type_counts": { "type": "object" },
+                    "chained_at": { "type": "string", "format": "date-time" }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": { "receipt_type": { "const": "violation" } }
+            },
+            "then": {
+                "required": ["constraint", "expected", "actual", "severity"],
+                "properties": {
+                    "constraint": { "type": "string" },
+                    "expected": { "type": "string" },
+                    "actual": { "type": "string" },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["warning", "error", "critical"]
+                    },
+                    "cycle": { "type": "integer" },
+                    "details": { "type": "object" }
+                }
+            }
+        },
+        {
+            "if": {
                 "properties": { "receipt_type": { "const": "ingest" } }
             },
             "then": {
@@ -52,15 +251,7 @@
                 "properties": { "receipt_type": { "const": "emissions_verify" } }
             },
             "then": {
-                "required": [
-                    "report_hash",
-                    "external_source_hashes",
-                    "match_score",
-                    "verified_value",
-                    "claimed_value",
-                    "discrepancy_pct",
-                    "status"
-                ],
+                "required": ["report_hash", "match_score", "status"],
                 "properties": {
                     "report_hash": { "type": "string" },
                     "external_source_hashes": {
@@ -74,102 +265,6 @@
                     "status": {
                         "type": "string",
                         "enum": ["verified", "flagged", "failed"]
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": { "receipt_type": { "const": "carbon_credit" } }
-            },
-            "then": {
-                "required": [
-                    "credit_id",
-                    "registry",
-                    "project_type",
-                    "claimed_tonnes",
-                    "baseline_tonnes",
-                    "additionality_score",
-                    "vintage_year",
-                    "registry_status",
-                    "verification_status"
-                ],
-                "properties": {
-                    "credit_id": { "type": "string" },
-                    "registry": { "type": "string" },
-                    "project_type": { "type": "string" },
-                    "claimed_tonnes": { "type": "number", "minimum": 0 },
-                    "baseline_tonnes": { "type": "number", "minimum": 0 },
-                    "additionality_score": { "type": "number", "minimum": 0, "maximum": 1 },
-                    "vintage_year": { "type": "integer" },
-                    "registry_status": {
-                        "type": "string",
-                        "enum": ["active", "retired", "cancelled"]
-                    },
-                    "verification_status": {
-                        "type": "string",
-                        "enum": ["verified", "flagged", "failed"]
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": { "receipt_type": { "const": "double_count" } }
-            },
-            "then": {
-                "required": [
-                    "credit_id",
-                    "registries_checked",
-                    "occurrences",
-                    "is_unique",
-                    "merkle_position",
-                    "merkle_proof",
-                    "cross_registry_root"
-                ],
-                "properties": {
-                    "credit_id": { "type": "string" },
-                    "registries_checked": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "occurrences": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "required": ["registry", "owner_hash", "status"],
-                            "properties": {
-                                "registry": { "type": "string" },
-                                "owner_hash": { "type": "string" },
-                                "status": { "type": "string" }
-                            }
-                        }
-                    },
-                    "is_unique": { "type": "boolean" },
-                    "merkle_position": { "type": "string" },
-                    "merkle_proof": { "type": "string" },
-                    "cross_registry_root": { "type": "string" }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": { "receipt_type": { "const": "climate_validation" } }
-            },
-            "then": {
-                "required": [
-                    "compression_ratio",
-                    "entropy_signature",
-                    "physical_consistency",
-                    "validation_status"
-                ],
-                "properties": {
-                    "compression_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
-                    "entropy_signature": { "type": "number" },
-                    "physical_consistency": { "type": "boolean" },
-                    "validation_status": {
-                        "type": "string",
-                        "enum": ["valid", "suspicious", "fabricated"]
                     }
                 }
             }

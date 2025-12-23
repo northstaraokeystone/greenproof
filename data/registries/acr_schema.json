@@ -1,0 +1,45 @@
+{
+    "registry": "acr",
+    "full_name": "American Carbon Registry",
+    "url": "https://acr2.apx.com",
+    "description": "US-focused carbon offset registry",
+    "field_mappings": {
+        "project_id": "Project ID",
+        "project_name": "Project Title",
+        "methodology": "Protocol",
+        "vintage_year": "Vintage Year",
+        "quantity_tco2e": "ERTs Issued",
+        "status": "Project Status",
+        "country": "Location",
+        "verification_body": "Verification Body",
+        "issuance_date": "Issuance Date",
+        "retirement_date": "Retirement Date",
+        "project_type": "Offset Category",
+        "state": "State"
+    },
+    "status_values": {
+        "active": "active",
+        "complete": "retired",
+        "under_review": "pending",
+        "cancelled": "cancelled"
+    },
+    "methodology_patterns": {
+        "Forestry": "ACR-Forest-Carbon",
+        "Livestock": "ACR-Livestock-Protocol",
+        "Landfill": "ACR-Landfill-Gas",
+        "ODS": "ACR-ODS",
+        "Rice": "ACR-Rice-Cultivation"
+    },
+    "credit_unit": "ERT",
+    "credit_unit_name": "Emission Reduction Tonne",
+    "vintage_format": "YYYY",
+    "api_available": true,
+    "api_version": "1.0",
+    "data_quality_indicators": {
+        "verification_required": true,
+        "third_party_audit": true,
+        "monitoring_frequency": "annual",
+        "us_focused": true,
+        "section_177_eligible": true
+    }
+}

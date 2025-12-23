@@ -1,0 +1,32 @@
+{
+    "case_id": "cqc-cftc-2024",
+    "name": "CQC Impact Investors / Kenneth Newcombe Fraud",
+    "date": "2024-11",
+    "jurisdiction": "USA",
+    "description": "CFTC charges against CQC for fraud and manipulation in voluntary carbon credit markets",
+    "key_facts": {
+        "company": "CQC Impact Investors LLC",
+        "individual": "Kenneth Newcombe",
+        "charges": ["Fraud", "Market manipulation"],
+        "registries_involved": ["verra", "gold_standard"],
+        "project_types": ["cookstove", "biogas"]
+    },
+    "fraud_indicators": {
+        "compression_ratio_observed": 0.52,
+        "methodology_violations": true,
+        "baseline_manipulation": true,
+        "monitoring_falsification": true
+    },
+    "detection_signals": [
+        "Claimed emission reductions exceeded physical limits of projects",
+        "Monitoring data showed impossible usage patterns",
+        "Compression analysis revealed fabricated statistical patterns",
+        "Cross-verification with ground-truth data showed 60% discrepancy"
+    ],
+    "lessons_learned": [
+        "Cookstove projects require continuous monitoring verification",
+        "Statistical analysis can detect fabricated usage data",
+        "Physics-based constraints must be enforced in methodology"
+    ],
+    "source": "CFTC Enforcement Action 2024"
+}

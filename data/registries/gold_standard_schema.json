@@ -1,0 +1,46 @@
+{
+    "registry": "gold_standard",
+    "full_name": "Gold Standard for the Global Goals",
+    "url": "https://registry.goldstandard.org",
+    "description": "Premium quality carbon credits with co-benefits",
+    "field_mappings": {
+        "project_id": "GS ID",
+        "project_name": "Project Name",
+        "methodology": "Methodology",
+        "vintage_year": "Vintage Year",
+        "quantity_tco2e": "VERs Issued",
+        "status": "Status",
+        "country": "Host Country",
+        "verification_body": "Validation Body",
+        "issuance_date": "Issuance Date",
+        "retirement_date": "Retirement Date",
+        "project_type": "Activity Type",
+        "sdg_impacts": "SDG Impacts"
+    },
+    "status_values": {
+        "certified": "active",
+        "listed": "pending",
+        "retired": "retired",
+        "cancelled": "cancelled"
+    },
+    "methodology_patterns": {
+        "Cookstove": "TPDDTEC",
+        "Solar": "GS-TPDDTEC-RWH",
+        "Water": "GS-TPDDTEC-WS",
+        "Biogas": "GS-Biogas",
+        "REDD+": "GS-REDD+"
+    },
+    "credit_unit": "VER",
+    "credit_unit_name": "Verified Emission Reduction",
+    "vintage_format": "YYYY",
+    "api_available": true,
+    "api_version": "2.0",
+    "data_quality_indicators": {
+        "verification_required": true,
+        "third_party_audit": true,
+        "monitoring_frequency": "annual",
+        "sdg_verification_required": true,
+        "stakeholder_consultation_required": true
+    },
+    "premium_multiplier": 1.5
+}

@@ -1,0 +1,31 @@
+{
+    "case_id": "shell-china-2024",
+    "name": "Shell China Carbon Credit Scandal",
+    "date": "2024-03",
+    "jurisdiction": "China",
+    "description": "Investigation into Shell's purchase of fraudulent carbon credits from Chinese projects",
+    "key_facts": {
+        "company": "Shell",
+        "estimated_fraudulent_credits_tco2e": 500000,
+        "project_types": ["grid_solar", "wind"],
+        "issue": "Additionality failure - projects would have been built anyway"
+    },
+    "fraud_indicators": {
+        "compression_ratio_observed": 0.68,
+        "additionality_failures": true,
+        "baseline_inflation": true,
+        "permanence_issues": false
+    },
+    "detection_signals": [
+        "Projects received government subsidies making them profitable without credits",
+        "Grid-connected renewables in China already economically viable",
+        "No evidence of credit revenue in project financial plans",
+        "Compression analysis showed moderate fraud signal (0.68 ratio)"
+    ],
+    "lessons_learned": [
+        "Grid-connected renewables in subsidized markets often non-additional",
+        "Financial additionality must be independently verified",
+        "Wealthy country/grid projects require heightened scrutiny"
+    ],
+    "source": "Shell Internal Investigation 2024"
+}
