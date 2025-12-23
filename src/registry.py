@@ -1,434 +1,240 @@
 """
-GreenProof Registry - Multi-registry integration for carbon credits.
+GreenProof Registry - US-ONLY registry integration.
 
-Solves the double-counting problem across registries:
-1. Verra (VCS) - largest voluntary market registry
-2. Gold Standard - premium quality focus
-3. ACR (American Carbon Registry) - US-focused
-4. CAR (Climate Action Reserve) - California-focused
+Government Waste Elimination Engine v3.0
 
-Key Problem:
-  Same offset can be registered on multiple registries, sold multiple times.
-  Europol: "Up to 90% of market volume fraudulent in some countries"
+KILLED: Gold Standard (too European, activist-heavy, no US enforcement leverage)
+KILLED: Non-US Verra projects
+FOCUS: US compliance/enforcement markets only
 
-Solution:
-  Identity hashing + cross-registry scan + overlap detection
+Supported US Registries:
+- Verra (US projects only)
+- American Carbon Registry
+- Climate Action Reserve
 """
 
 import json
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from .core import (
-    GREENPROOF_TENANT,
     SUPPORTED_REGISTRIES,
+    TENANT_ID,
     StopRule,
     dual_hash,
     emit_anomaly_receipt,
     emit_receipt,
 )
 
-# === REGISTRY MAPPINGS ===
-# Maps registry-specific field names to GreenProof canonical schema
-REGISTRY_FIELD_MAPPINGS = {
-    "verra": {
-        "project_id": "ID",
-        "project_name": "Name",
-        "methodology": "Methodology",
-        "vintage_year": "Vintage",
-        "quantity_tco2e": "Quantity",
-        "status": "Status",
-        "country": "Country/Area",
-        "verification_body": "Validation/Verification Body",
-    },
-    "gold_standard": {
-        "project_id": "GS ID",
-        "project_name": "Project Name",
-        "methodology": "Methodology",
-        "vintage_year": "Vintage Year",
-        "quantity_tco2e": "VERs Issued",
-        "status": "Status",
-        "country": "Host Country",
-        "verification_body": "Validation Body",
-    },
-    "acr": {
-        "project_id": "Project ID",
-        "project_name": "Project Title",
-        "methodology": "Protocol",
-        "vintage_year": "Vintage Year",
-        "quantity_tco2e": "ERTs Issued",
-        "status": "Project Status",
-        "country": "Location",
-        "verification_body": "Verification Body",
-    },
-    "car": {
-        "project_id": "Project ID",
-        "project_name": "Project Name",
-        "methodology": "Protocol",
-        "vintage_year": "Vintage",
-        "quantity_tco2e": "CRTs Issued",
-        "status": "Status",
-        "country": "Project Location",
-        "verification_body": "Verifier",
-    },
-}
 
-# === GLOBAL REGISTRY STATE (for deduplication) ===
-_IDENTITY_REGISTRY: dict[str, list[dict[str, Any]]] = {}
+def us_only_mode() -> bool:
+    """Check if US-only mode is enabled.
 
-
-def reset_registry() -> None:
-    """Reset global registry state. For testing only."""
-    global _IDENTITY_REGISTRY
-    _IDENTITY_REGISTRY = {}
-
-
-def get_registry_state() -> dict[str, list[dict[str, Any]]]:
-    """Get current registry state. For debugging."""
-    return _IDENTITY_REGISTRY.copy()
-
-
-def normalize_claim(claim: dict[str, Any], registry: str) -> dict[str, Any]:
-    """Normalize registry-specific claim to GreenProof canonical schema.
-
-    Args:
-        claim: Raw claim from registry
-        registry: Registry name (verra, gold_standard, acr, car)
+    Always returns True in v3. International registries killed.
 
     Returns:
-        dict: Normalized claim in GreenProof schema
+        bool: Always True
     """
-    registry_lower = registry.lower().replace("-", "_").replace(" ", "_")
-
-    if registry_lower not in REGISTRY_FIELD_MAPPINGS:
-        # Unknown registry, return as-is with registry tag
-        claim["registry"] = registry_lower
-        return claim
-
-    mapping = REGISTRY_FIELD_MAPPINGS[registry_lower]
-
-    normalized = {
-        "claim_id": claim.get("claim_id", str(uuid.uuid4())),
-        "registry": registry_lower,
-    }
-
-    # Apply field mappings
-    for canonical_field, registry_field in mapping.items():
-        if registry_field in claim:
-            normalized[canonical_field] = claim[registry_field]
-        elif canonical_field in claim:
-            normalized[canonical_field] = claim[canonical_field]
-
-    # Copy any fields not in mapping
-    for key, value in claim.items():
-        if key not in normalized and key not in mapping.values():
-            normalized[key] = value
-
-    return normalized
+    return True
 
 
-def hash_claim_identity(claim: dict[str, Any]) -> str:
-    """Create identity hash for deduplication.
+def filter_us_projects(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter to US-only projects.
 
-    Identity is based on: project_id + vintage_year + quantity
-    This catches the same offset registered across multiple registries.
+    Removes non-US projects from list.
 
     Args:
-        claim: Normalized claim dict
+        projects: List of project dicts
 
     Returns:
-        str: Identity hash (dual-hash format)
+        list: Filtered US-only projects
     """
-    # Build identity string from key fields
-    identity_parts = [
-        str(claim.get("project_id", "")),
-        str(claim.get("vintage_year", "")),
-        str(claim.get("quantity_tco2e", "")),
-        str(claim.get("location", {}).get("country", claim.get("country", ""))),
+    us_locations = [
+        "united states", "usa", "us", "america",
+        "alaska", "hawaii", "puerto rico", "guam",
     ]
-    identity_string = "|".join(identity_parts)
-    return dual_hash(identity_string)
+
+    us_states = [
+        "alabama", "arizona", "arkansas", "california", "colorado",
+        "connecticut", "delaware", "florida", "georgia", "idaho",
+        "illinois", "indiana", "iowa", "kansas", "kentucky",
+        "louisiana", "maine", "maryland", "massachusetts", "michigan",
+        "minnesota", "mississippi", "missouri", "montana", "nebraska",
+        "nevada", "new hampshire", "new jersey", "new mexico", "new york",
+        "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+        "pennsylvania", "rhode island", "south carolina", "south dakota",
+        "tennessee", "texas", "utah", "vermont", "virginia",
+        "washington", "west virginia", "wisconsin", "wyoming",
+    ]
+
+    all_us = set(us_locations + us_states)
+
+    filtered = []
+    for project in projects:
+        location = project.get("project_location", "").lower()
+        country = project.get("country", "").lower()
+
+        if any(us_loc in location for us_loc in all_us) or country in all_us:
+            filtered.append(project)
+
+    return filtered
 
 
-def register_claim(
-    claim: dict[str, Any],
-    tenant_id: str = GREENPROOF_TENANT,
-) -> dict[str, Any]:
-    """Register claim in global registry for deduplication tracking.
-
-    Args:
-        claim: Normalized claim dict
-        tenant_id: Tenant identifier
-
-    Returns:
-        dict: registry_receipt with duplicate info
-    """
-    global _IDENTITY_REGISTRY
-
-    identity_hash = hash_claim_identity(claim)
-    claim_id = claim.get("claim_id", str(uuid.uuid4()))
-    registry = claim.get("registry", "unknown")
-
-    # Check for existing entries
-    existing = _IDENTITY_REGISTRY.get(identity_hash, [])
-    duplicates_found = len(existing)
-    duplicate_registries = list(set(e["registry"] for e in existing))
-
-    # Calculate overlap percentage
-    if duplicates_found > 0:
-        unique_registries = len(set(duplicate_registries + [registry]))
-        overlap_pct = (duplicates_found + 1 - unique_registries) / (duplicates_found + 1)
-    else:
-        overlap_pct = 0.0
-
-    # Add to registry
-    _IDENTITY_REGISTRY.setdefault(identity_hash, []).append({
-        "claim_id": claim_id,
-        "registry": registry,
-        "ts": datetime.now(timezone.utc).isoformat(),
-    })
-
-    # Build and emit receipt
-    receipt = {
-        "receipt_type": "registry",
-        "tenant_id": tenant_id,
-        "claim_id": claim_id,
-        "source_registry": registry,
-        "identity_hash": identity_hash,
-        "duplicates_found": duplicates_found,
-        "duplicate_registries": duplicate_registries,
-        "overlap_percentage": round(overlap_pct, 4),
-        "normalization_applied": True,
-        "payload_hash": dual_hash(json.dumps(claim, sort_keys=True)),
-    }
-
-    return emit_receipt(receipt)
-
-
-def check_duplicate(
-    identity_hash: str,
-    ledger: list[dict[str, Any]] | None = None,
-) -> dict[str, Any] | None:
-    """Check if claim identity already exists.
-
-    Args:
-        identity_hash: Identity hash from hash_claim_identity()
-        ledger: Optional ledger to search (uses global if None)
+def get_supported_registries() -> list[str]:
+    """Get list of supported US registries.
 
     Returns:
-        dict: First matching claim, or None if not found
+        list: Registry names
     """
-    global _IDENTITY_REGISTRY
-
-    if ledger is not None:
-        # Search provided ledger
-        for entry in ledger:
-            if hash_claim_identity(entry) == identity_hash:
-                return entry
-        return None
-
-    # Search global registry
-    existing = _IDENTITY_REGISTRY.get(identity_hash, [])
-    if existing:
-        return existing[0]
-    return None
+    return SUPPORTED_REGISTRIES.copy()
 
 
-def fetch_registry_data(
-    registry: str,
-    project_id: str,
-    tenant_id: str = GREENPROOF_TENANT,
-) -> dict[str, Any]:
-    """Fetch project data from registry API.
-
-    NOTE: v2 uses synthetic data. Real API integration is v3 scope.
+def is_registry_supported(registry: str) -> bool:
+    """Check if registry is supported.
 
     Args:
         registry: Registry name
+
+    Returns:
+        bool: True if supported
+    """
+    return registry.lower() in [r.lower() for r in SUPPORTED_REGISTRIES]
+
+
+def verify_registry_project(
+    project_id: str,
+    registry: str,
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Verify project exists in US registry.
+
+    Args:
         project_id: Project identifier
+        registry: Registry name
         tenant_id: Tenant identifier
 
     Returns:
-        dict: Project data (synthetic in v2)
+        dict: Verification result
     """
-    # v2: Return synthetic data matching registry schema
-    registry_lower = registry.lower().replace("-", "_").replace(" ", "_")
+    # Check registry is supported
+    if not is_registry_supported(registry):
+        emit_anomaly_receipt(
+            tenant_id=tenant_id,
+            anomaly_type="unsupported_registry",
+            classification="warning",
+            details={
+                "registry": registry,
+                "supported": SUPPORTED_REGISTRIES,
+                "reason": "Non-US or deprecated registry",
+            },
+            action="flag",
+        )
+        return {
+            "project_id": project_id,
+            "registry": registry,
+            "verified": False,
+            "status": "unsupported_registry",
+            "reason": "Registry not in US-only approved list",
+        }
 
-    synthetic_data = {
+    # Synthetic verification for v3 (real API integration is v4)
+    if project_id.startswith("CANCELLED"):
+        status = "cancelled"
+        verified = False
+    elif project_id.startswith("RETIRED"):
+        status = "retired"
+        verified = False
+    elif project_id.startswith("FOREIGN"):
+        status = "non_us"
+        verified = False
+    else:
+        status = "active"
+        verified = True
+
+    result = {
         "project_id": project_id,
-        "registry": registry_lower,
-        "status": "active",
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "synthetic": True,  # Flag for v2
+        "registry": registry,
+        "verified": verified,
+        "status": status,
+        "us_only_mode": True,
+        "lookup_method": "synthetic_v3",
     }
 
-    # Emit fetch receipt for audit trail
-    emit_receipt({
-        "receipt_type": "registry_fetch",
+    # Emit receipt (CLAUDEME LAW_1)
+    receipt = {
+        "receipt_type": "registry_verify",
         "tenant_id": tenant_id,
-        "registry": registry_lower,
+        "payload_hash": dual_hash(json.dumps(result, sort_keys=True)),
         "project_id": project_id,
-        "status": "synthetic",
-        "payload_hash": dual_hash(json.dumps(synthetic_data, sort_keys=True)),
-    })
+        "registry": registry,
+        "verified": verified,
+        "status": status,
+    }
+    emit_receipt(receipt)
 
-    return synthetic_data
+    return result
 
 
-def cross_registry_scan(
-    claim: dict[str, Any],
-    tenant_id: str = GREENPROOF_TENANT,
-) -> list[dict[str, Any]]:
-    """Scan all registries for matching claims.
-
-    This is the core double-counting detection mechanism.
+def cross_registry_check(
+    project_id: str,
+    registries: list[str] | None = None,
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Check project across US registries only.
 
     Args:
-        claim: Claim to scan for
+        project_id: Project identifier
+        registries: Registries to check (default: all US)
         tenant_id: Tenant identifier
 
     Returns:
-        list: Matching claims from all registries
+        dict: Cross-registry check result
     """
-    global _IDENTITY_REGISTRY
+    if registries is None:
+        registries = SUPPORTED_REGISTRIES
 
-    identity_hash = hash_claim_identity(claim)
-    matches = []
+    # Filter to only supported registries
+    registries = [r for r in registries if is_registry_supported(r)]
 
-    # Check global registry
-    existing = _IDENTITY_REGISTRY.get(identity_hash, [])
-    matches.extend(existing)
+    results = []
+    for registry in registries:
+        result = verify_registry_project(project_id, registry, tenant_id)
+        results.append(result)
 
-    # Emit scan receipt
-    emit_receipt({
-        "receipt_type": "registry_scan",
-        "tenant_id": tenant_id,
-        "claim_id": claim.get("claim_id"),
-        "identity_hash": identity_hash,
-        "matches_found": len(matches),
-        "registries_scanned": SUPPORTED_REGISTRIES,
-        "payload_hash": dual_hash(json.dumps({
-            "identity_hash": identity_hash,
-            "matches": len(matches),
-        }, sort_keys=True)),
-    })
+    found_count = sum(1 for r in results if r["verified"])
 
-    return matches
+    return {
+        "project_id": project_id,
+        "registries_checked": registries,
+        "found_in": [r["registry"] for r in results if r["verified"]],
+        "found_count": found_count,
+        "us_only_mode": True,
+    }
 
 
-def calculate_overlap(claims: list[dict[str, Any]]) -> float:
-    """Calculate percentage overlap (double-counting) in a set of claims.
+# === RESET FOR TESTING ===
 
-    Args:
-        claims: List of claims to analyze
+def reset_registry():
+    """Reset registry state for testing.
 
-    Returns:
-        float: Overlap percentage (0.0 = no duplicates, 1.0 = all duplicates)
+    No-op in v3 as registry is stateless.
     """
-    if not claims:
-        return 0.0
-
-    # Hash all claims
-    identity_hashes = [hash_claim_identity(c) for c in claims]
-
-    # Count duplicates
-    unique_hashes = set(identity_hashes)
-    total = len(identity_hashes)
-    unique = len(unique_hashes)
-
-    if total == 0:
-        return 0.0
-
-    # Overlap = (total - unique) / total
-    overlap = (total - unique) / total
-    return round(overlap, 4)
+    pass
 
 
-def stoprule_duplicate_claim(
-    claim_id: str,
-    duplicates: list[dict[str, Any]],
-    tenant_id: str = GREENPROOF_TENANT,
-) -> None:
-    """Emit anomaly and raise StopRule for duplicate claim.
+# === KILLED FUNCTIONS ===
+# These existed in v2 but are removed in v3
 
-    CLAUDEME LAW: anomaly_receipt MUST be emitted BEFORE raising StopRule.
-
-    Args:
-        claim_id: ID of duplicate claim
-        duplicates: List of existing claims
-        tenant_id: Tenant identifier
-
-    Raises:
-        StopRule: Always
-    """
-    emit_anomaly_receipt(
-        tenant_id=tenant_id,
-        anomaly_type="duplicate_claim",
-        classification="critical",
-        details={
-            "claim_id": claim_id,
-            "duplicate_count": len(duplicates),
-            "duplicate_registries": list(set(d.get("registry") for d in duplicates)),
-        },
-        action="halt",
-    )
-    raise StopRule(
-        f"Duplicate claim detected: {claim_id} found in {len(duplicates)} registries",
-        classification="critical",
+def fetch_gold_standard(*args, **kwargs):
+    """KILLED: Gold Standard integration removed in v3."""
+    raise NotImplementedError(
+        "Gold Standard integration KILLED in v3. "
+        "Too European, activist-heavy, no US enforcement leverage."
     )
 
 
-# === SYNTHETIC DATA GENERATORS (for testing) ===
-
-
-def generate_unique_claims(count: int = 10) -> list[dict[str, Any]]:
-    """Generate unique carbon claims for testing.
-
-    Args:
-        count: Number of claims to generate
-
-    Returns:
-        list: Unique claims
-    """
-    claims = []
-    for i in range(count):
-        claims.append({
-            "claim_id": str(uuid.uuid4()),
-            "registry": SUPPORTED_REGISTRIES[i % len(SUPPORTED_REGISTRIES)],
-            "project_id": f"PROJECT-{i:04d}",
-            "vintage_year": 2020 + (i % 5),
-            "quantity_tco2e": 1000.0 + (i * 100),
-            "project_type": "forest_conservation",
-            "location": {"country": "BR"},
-        })
-    return claims
-
-
-def generate_duplicate_claims(count: int = 5) -> list[dict[str, Any]]:
-    """Generate duplicate carbon claims for testing.
-
-    Same project registered on multiple registries = double-counting.
-
-    Args:
-        count: Number of duplicate sets to generate
-
-    Returns:
-        list: Claims with duplicates
-    """
-    claims = []
-    for i in range(count):
-        base_claim = {
-            "project_id": f"DUP-PROJECT-{i:04d}",
-            "vintage_year": 2023,
-            "quantity_tco2e": 5000.0,
-            "project_type": "renewable_energy",
-            "location": {"country": "IN"},
-        }
-        # Same project on multiple registries
-        for registry in ["verra", "gold_standard"]:
-            claim = base_claim.copy()
-            claim["claim_id"] = str(uuid.uuid4())
-            claim["registry"] = registry
-            claims.append(claim)
-    return claims
+def normalize_gold_standard(*args, **kwargs):
+    """KILLED: Gold Standard normalization removed in v3."""
+    raise NotImplementedError(
+        "Gold Standard integration KILLED in v3. "
+        "Pivot to US compliance/enforcement markets only."
+    )

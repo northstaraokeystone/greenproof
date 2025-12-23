@@ -1,22 +1,24 @@
 """
-GreenProof Prove - Receipt chain and merkle proofs.
+GreenProof Prove - Receipt chain and merkle proof infrastructure.
 
-Identical pattern to AXIOM/ProofPack. Provides:
-- Receipt chaining across all verification stages
-- Merkle proof generation for individual claims
-- Proof verification
-- Batch summarization
-- Human-readable audit trails
+Government Waste Elimination Engine v3.0
+
+All waste findings anchored with merkle proof.
+Immutable receipts for DOGE alignment.
+
+Receipt: anchor_receipt, proof_receipt
+SLO: Proof generation ≤ 50ms, verification ≤ 10ms
 """
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .core import (
-    GREENPROOF_TENANT,
     RECEIPTS_FILE,
+    TENANT_ID,
     dual_hash,
     emit_receipt,
     merkle_proof,
@@ -25,349 +27,266 @@ from .core import (
 )
 
 
-def chain_receipts(
-    receipts: list[dict[str, Any]],
-    tenant_id: str = GREENPROOF_TENANT,
+# === PROOF CHAIN STATE ===
+_PROOF_CHAIN: list[str] = []  # List of receipt hashes
+_ANCHORS: list[dict[str, Any]] = []  # List of anchor points
+
+
+def add_to_chain(
+    receipt_hash: str,
+    tenant_id: str = TENANT_ID,
 ) -> dict[str, Any]:
-    """Compute merkle root from receipts and emit chain_receipt.
+    """Add receipt hash to proof chain.
 
     Args:
-        receipts: List of receipt dicts (must have payload_hash)
+        receipt_hash: Receipt hash to add
         tenant_id: Tenant identifier
 
     Returns:
-        dict: chain_receipt with merkle_root
+        dict: Chain addition result
     """
-    if not receipts:
-        root = dual_hash("")
-        hashes = []
-    else:
-        # Extract payload hashes
-        hashes = [r.get("payload_hash", dual_hash(json.dumps(r, sort_keys=True)))
-                  for r in receipts]
-        root = merkle_root(hashes)
-
-    # Summarize by type
-    type_counts = {}
-    for r in receipts:
-        rtype = r.get("receipt_type", "unknown")
-        type_counts[rtype] = type_counts.get(rtype, 0) + 1
-
-    # Build and emit receipt
-    receipt = {
-        "receipt_type": "chain",
-        "tenant_id": tenant_id,
-        "merkle_root": root,
-        "receipt_count": len(receipts),
-        "type_counts": type_counts,
-        "chained_at": datetime.now(timezone.utc).isoformat(),
-        "payload_hash": dual_hash(root),
-    }
-
-    return emit_receipt(receipt)
-
-
-def prove_claim(
-    claim_id: str,
-    receipts: list[dict[str, Any]],
-    chain: dict[str, Any],
-) -> dict[str, Any]:
-    """Generate merkle proof for a specific claim.
-
-    Args:
-        claim_id: ID of claim to prove
-        receipts: List of receipts (same as used for chain)
-        chain: chain_receipt from chain_receipts()
-
-    Returns:
-        dict: Proof containing path and verification data
-    """
-    # Find all receipts for this claim
-    claim_receipts = [r for r in receipts if r.get("claim_id") == claim_id]
-
-    if not claim_receipts:
-        return {
-            "valid": False,
-            "claim_id": claim_id,
-            "reason": "claim_not_found",
-            "receipts": [],
-        }
-
-    # Get hashes for all receipts
-    all_hashes = [r.get("payload_hash", dual_hash(json.dumps(r, sort_keys=True)))
-                  for r in receipts]
-
-    # Generate proof for first claim receipt
-    first_receipt = claim_receipts[0]
-    first_hash = first_receipt.get("payload_hash", dual_hash(json.dumps(first_receipt, sort_keys=True)))
-
-    try:
-        index = all_hashes.index(first_hash)
-        proof = merkle_proof(all_hashes, index)
-    except ValueError:
-        return {
-            "valid": False,
-            "claim_id": claim_id,
-            "reason": "hash_not_found",
-            "receipts": claim_receipts,
-        }
+    _PROOF_CHAIN.append(receipt_hash)
+    position = len(_PROOF_CHAIN) - 1
 
     return {
-        "valid": proof.get("valid", False),
-        "claim_id": claim_id,
-        "leaf_hash": first_hash,
-        "proof_path": proof.get("path", []),
-        "directions": proof.get("directions", []),
-        "merkle_root": chain.get("merkle_root"),
-        "receipts": claim_receipts,
-        "receipt_count": len(claim_receipts),
+        "receipt_hash": receipt_hash,
+        "position": position,
+        "chain_length": len(_PROOF_CHAIN),
     }
+
+
+def generate_proof(
+    receipt_hash: str,
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Generate merkle proof for receipt.
+
+    Args:
+        receipt_hash: Receipt hash to prove
+        tenant_id: Tenant identifier
+
+    Returns:
+        dict: Proof result
+    """
+    start_time = time.time()
+
+    if receipt_hash not in _PROOF_CHAIN:
+        return {
+            "valid": False,
+            "error": "Receipt not in chain",
+        }
+
+    index = _PROOF_CHAIN.index(receipt_hash)
+    proof = merkle_proof(_PROOF_CHAIN, index)
+    root = merkle_root(_PROOF_CHAIN)
+
+    result = {
+        "receipt_hash": receipt_hash,
+        "position": index,
+        "merkle_proof": proof,
+        "merkle_root": root,
+        "chain_length": len(_PROOF_CHAIN),
+        "proof_time_ms": round((time.time() - start_time) * 1000, 2),
+    }
+
+    # Emit proof receipt
+    receipt = {
+        "receipt_type": "proof_generated",
+        "tenant_id": tenant_id,
+        "payload_hash": dual_hash(json.dumps(result, sort_keys=True)),
+        "target_hash": receipt_hash,
+        "merkle_root": root,
+    }
+    emit_receipt(receipt)
+
+    return result
 
 
 def verify_proof(
-    claim_receipt: dict[str, Any],
+    receipt_hash: str,
     proof: dict[str, Any],
-    root: str,
-) -> bool:
-    """Verify a merkle proof for a claim receipt.
-
-    Args:
-        claim_receipt: The receipt to verify
-        proof: Proof from prove_claim()
-        root: Expected merkle root
-
-    Returns:
-        bool: True if proof is valid
-    """
-    if not proof.get("valid"):
-        return False
-
-    leaf_hash = claim_receipt.get(
-        "payload_hash",
-        dual_hash(json.dumps(claim_receipt, sort_keys=True))
-    )
-
-    # Reconstruct merkle proof dict for verify_merkle_proof
-    proof_dict = {
-        "valid": True,
-        "leaf_hash": leaf_hash,
-        "path": proof.get("proof_path", []),
-        "directions": proof.get("directions", []),
-    }
-
-    return verify_merkle_proof(leaf_hash, proof_dict, root)
-
-
-def summarize_batch(
-    receipts: list[dict[str, Any]],
+    expected_root: str,
+    tenant_id: str = TENANT_ID,
 ) -> dict[str, Any]:
-    """Aggregate statistics from a batch of receipts.
+    """Verify merkle proof for receipt.
 
     Args:
-        receipts: List of receipt dicts
+        receipt_hash: Receipt hash to verify
+        proof: Merkle proof dict
+        expected_root: Expected merkle root
+        tenant_id: Tenant identifier
 
     Returns:
-        dict: Aggregated statistics
+        dict: Verification result
     """
-    if not receipts:
-        return {
-            "total_receipts": 0,
-            "type_breakdown": {},
-            "claim_count": 0,
-            "fraud_summary": {},
-            "compression_stats": {},
-        }
+    start_time = time.time()
 
-    # Count by type
-    type_breakdown = {}
-    for r in receipts:
-        rtype = r.get("receipt_type", "unknown")
-        type_breakdown[rtype] = type_breakdown.get(rtype, 0) + 1
+    valid = verify_merkle_proof(receipt_hash, proof, expected_root)
 
-    # Unique claims
-    claim_ids = set(r.get("claim_id") for r in receipts if r.get("claim_id"))
-
-    # Fraud summary
-    fraud_receipts = [r for r in receipts if r.get("receipt_type") == "fraud"]
-    fraud_levels = {}
-    for fr in fraud_receipts:
-        level = fr.get("fraud_level", "unknown")
-        fraud_levels[level] = fraud_levels.get(level, 0) + 1
-
-    fraud_summary = {
-        "total_checked": len(fraud_receipts),
-        "by_level": fraud_levels,
-        "rejection_rate": fraud_levels.get("likely_fraud", 0) + fraud_levels.get("confirmed_fraud", 0),
+    result = {
+        "receipt_hash": receipt_hash,
+        "valid": valid,
+        "expected_root": expected_root,
+        "verification_time_ms": round((time.time() - start_time) * 1000, 2),
     }
-
-    # Compression stats
-    compression_receipts = [r for r in receipts if r.get("receipt_type") == "compression"]
-    if compression_receipts:
-        ratios = [r.get("compression_ratio", 0) for r in compression_receipts]
-        compression_stats = {
-            "count": len(compression_receipts),
-            "avg_ratio": round(sum(ratios) / len(ratios), 4),
-            "min_ratio": round(min(ratios), 4),
-            "max_ratio": round(max(ratios), 4),
-            "verified_count": len([r for r in compression_receipts if r.get("classification") == "verified"]),
-            "suspect_count": len([r for r in compression_receipts if r.get("classification") == "suspect"]),
-            "fraud_signal_count": len([r for r in compression_receipts if r.get("classification") == "fraud_signal"]),
-        }
-    else:
-        compression_stats = {"count": 0}
-
-    return {
-        "total_receipts": len(receipts),
-        "type_breakdown": type_breakdown,
-        "claim_count": len(claim_ids),
-        "fraud_summary": fraud_summary,
-        "compression_stats": compression_stats,
-    }
-
-
-def format_audit_trail(
-    claim_id: str,
-    receipts: list[dict[str, Any]] | None = None,
-) -> str:
-    """Generate human-readable audit trail for a claim.
-
-    Args:
-        claim_id: ID of claim to audit
-        receipts: Optional list of receipts (loads from file if None)
-
-    Returns:
-        str: Formatted audit trail
-    """
-    if receipts is None:
-        receipts = load_receipts()
-
-    # Find all receipts for this claim
-    claim_receipts = [r for r in receipts if r.get("claim_id") == claim_id]
-
-    if not claim_receipts:
-        return f"No receipts found for claim: {claim_id}"
-
-    # Sort by timestamp
-    claim_receipts.sort(key=lambda r: r.get("ts", ""))
-
-    lines = [
-        f"═══════════════════════════════════════════════════════════════",
-        f"AUDIT TRAIL: {claim_id}",
-        f"═══════════════════════════════════════════════════════════════",
-        f"Total receipts: {len(claim_receipts)}",
-        f"",
-    ]
-
-    for i, r in enumerate(claim_receipts, 1):
-        rtype = r.get("receipt_type", "unknown")
-        ts = r.get("ts", "unknown")
-        payload_hash = r.get("payload_hash", "unknown")[:32] + "..."
-
-        lines.append(f"[{i}] {rtype.upper()}")
-        lines.append(f"    Timestamp: {ts}")
-        lines.append(f"    Hash: {payload_hash}")
-
-        # Type-specific details
-        if rtype == "compression":
-            ratio = r.get("compression_ratio", 0)
-            classification = r.get("classification", "unknown")
-            lines.append(f"    Compression Ratio: {ratio:.4f}")
-            lines.append(f"    Classification: {classification}")
-
-        elif rtype == "fraud":
-            score = r.get("fraud_score", 0)
-            level = r.get("fraud_level", "unknown")
-            recommendation = r.get("recommendation", "unknown")
-            lines.append(f"    Fraud Score: {score:.4f}")
-            lines.append(f"    Level: {level}")
-            lines.append(f"    Recommendation: {recommendation}")
-
-        elif rtype == "registry":
-            duplicates = r.get("duplicates_found", 0)
-            overlap = r.get("overlap_percentage", 0)
-            lines.append(f"    Duplicates Found: {duplicates}")
-            lines.append(f"    Overlap: {overlap:.2%}")
-
-        elif rtype == "listing":
-            status = r.get("status", "unknown")
-            price = r.get("price_per_tco2e", 0)
-            lines.append(f"    Status: {status}")
-            lines.append(f"    Price: ${price:.2f}/tCO2e")
-
-        elif rtype == "trade":
-            buyer = r.get("buyer", "unknown")
-            seller = r.get("seller", "unknown")
-            price_total = r.get("price_total", 0)
-            lines.append(f"    Buyer: {buyer}")
-            lines.append(f"    Seller: {seller}")
-            lines.append(f"    Total: ${price_total:.2f}")
-
-        elif rtype == "energy":
-            status = r.get("verification_status", "unknown")
-            discrepancy = r.get("discrepancy_pct", 0)
-            lines.append(f"    Status: {status}")
-            lines.append(f"    Discrepancy: {discrepancy:.2%}")
-
-        elif rtype == "ev":
-            status = r.get("verification_status", "unknown")
-            vehicles = r.get("vehicle_count", 0)
-            lines.append(f"    Status: {status}")
-            lines.append(f"    Vehicles: {vehicles}")
-
-        lines.append("")
-
-    lines.append("═══════════════════════════════════════════════════════════════")
-
-    return "\n".join(lines)
-
-
-def load_receipts(filepath: Path | None = None) -> list[dict[str, Any]]:
-    """Load receipts from JSONL ledger file.
-
-    Args:
-        filepath: Optional path to receipts file
-
-    Returns:
-        list: List of receipt dicts
-    """
-    if filepath is None:
-        filepath = RECEIPTS_FILE
-
-    receipts = []
-    if filepath.exists():
-        with open(filepath) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        receipts.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-
-    return receipts
-
-
-def get_receipts_for_claims(
-    claim_ids: list[str],
-    receipts: list[dict[str, Any]] | None = None,
-) -> dict[str, list[dict[str, Any]]]:
-    """Get all receipts for a list of claims.
-
-    Args:
-        claim_ids: List of claim IDs
-        receipts: Optional list of receipts (loads from file if None)
-
-    Returns:
-        dict: Mapping of claim_id -> list of receipts
-    """
-    if receipts is None:
-        receipts = load_receipts()
-
-    result = {cid: [] for cid in claim_ids}
-
-    for r in receipts:
-        cid = r.get("claim_id")
-        if cid in result:
-            result[cid].append(r)
 
     return result
+
+
+def anchor_chain(
+    anchor_type: str = "periodic",
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Create anchor point in proof chain.
+
+    Args:
+        anchor_type: Type of anchor (periodic, doge, cbam, etc.)
+        tenant_id: Tenant identifier
+
+    Returns:
+        dict: Anchor result
+    """
+    if not _PROOF_CHAIN:
+        return {"error": "No receipts in chain to anchor"}
+
+    root = merkle_root(_PROOF_CHAIN)
+    anchor_height = len(_ANCHORS)
+
+    anchor = {
+        "anchor_height": anchor_height,
+        "merkle_root": root,
+        "leaf_count": len(_PROOF_CHAIN),
+        "anchor_type": anchor_type,
+        "anchored_at": datetime.now(timezone.utc).isoformat(),
+        "previous_anchor": _ANCHORS[-1]["merkle_root"] if _ANCHORS else None,
+    }
+
+    _ANCHORS.append(anchor)
+
+    # Emit anchor receipt
+    receipt = {
+        "receipt_type": "anchor",
+        "tenant_id": tenant_id,
+        "payload_hash": dual_hash(json.dumps(anchor, sort_keys=True)),
+        "merkle_root": root,
+        "leaf_count": len(_PROOF_CHAIN),
+        "anchor_type": anchor_type,
+        "previous_anchor": anchor["previous_anchor"],
+        "chain_height": anchor_height,
+    }
+    emit_receipt(receipt)
+
+    return anchor
+
+
+def get_chain_state() -> dict[str, Any]:
+    """Get current proof chain state.
+
+    Returns:
+        dict: Chain state
+    """
+    return {
+        "chain_length": len(_PROOF_CHAIN),
+        "anchor_count": len(_ANCHORS),
+        "current_root": merkle_root(_PROOF_CHAIN) if _PROOF_CHAIN else None,
+        "latest_anchor": _ANCHORS[-1] if _ANCHORS else None,
+    }
+
+
+def load_receipts_to_chain(
+    receipts_file: Path = RECEIPTS_FILE,
+) -> int:
+    """Load receipts from file into proof chain.
+
+    Args:
+        receipts_file: Path to receipts file
+
+    Returns:
+        int: Number of receipts loaded
+    """
+    if not receipts_file.exists():
+        return 0
+
+    count = 0
+    with open(receipts_file) as f:
+        for line in f:
+            try:
+                receipt = json.loads(line.strip())
+                receipt_hash = receipt.get("payload_hash", dual_hash(line))
+                add_to_chain(receipt_hash)
+                count += 1
+            except json.JSONDecodeError:
+                continue
+
+    return count
+
+
+def batch_prove(
+    receipt_hashes: list[str],
+    tenant_id: str = TENANT_ID,
+) -> list[dict[str, Any]]:
+    """Generate proofs for multiple receipts.
+
+    Args:
+        receipt_hashes: List of receipt hashes
+        tenant_id: Tenant identifier
+
+    Returns:
+        list: List of proof results
+    """
+    return [generate_proof(h, tenant_id) for h in receipt_hashes]
+
+
+def verify_chain_integrity(
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Verify integrity of entire proof chain.
+
+    Args:
+        tenant_id: Tenant identifier
+
+    Returns:
+        dict: Integrity check result
+    """
+    start_time = time.time()
+
+    if not _PROOF_CHAIN:
+        return {"valid": True, "chain_length": 0, "reason": "Empty chain"}
+
+    # Verify each receipt can be proven
+    invalid = []
+    root = merkle_root(_PROOF_CHAIN)
+
+    for i, receipt_hash in enumerate(_PROOF_CHAIN):
+        proof = merkle_proof(_PROOF_CHAIN, i)
+        if not verify_merkle_proof(receipt_hash, proof, root):
+            invalid.append(i)
+
+    valid = len(invalid) == 0
+
+    result = {
+        "valid": valid,
+        "chain_length": len(_PROOF_CHAIN),
+        "invalid_positions": invalid,
+        "current_root": root,
+        "verification_time_ms": round((time.time() - start_time) * 1000, 2),
+    }
+
+    # Emit integrity receipt
+    receipt = {
+        "receipt_type": "chain_integrity",
+        "tenant_id": tenant_id,
+        "payload_hash": dual_hash(json.dumps(result, sort_keys=True)),
+        "valid": valid,
+        "chain_length": len(_PROOF_CHAIN),
+    }
+    emit_receipt(receipt)
+
+    return result
+
+
+def reset_chain():
+    """Reset proof chain (for testing)."""
+    global _PROOF_CHAIN, _ANCHORS
+    _PROOF_CHAIN = []
+    _ANCHORS = []
