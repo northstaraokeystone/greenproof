@@ -1,0 +1,45 @@
+{
+    "registry": "verra",
+    "full_name": "Verra VCS (Verified Carbon Standard)",
+    "url": "https://registry.verra.org",
+    "description": "Largest voluntary carbon market registry",
+    "field_mappings": {
+        "project_id": "ID",
+        "project_name": "Name",
+        "methodology": "Methodology",
+        "vintage_year": "Vintage",
+        "quantity_tco2e": "Quantity",
+        "status": "Status",
+        "country": "Country/Area",
+        "verification_body": "Validation/Verification Body",
+        "issuance_date": "Issuance Date",
+        "retirement_date": "Retirement Date",
+        "project_type": "Project Type",
+        "region": "Region"
+    },
+    "status_values": {
+        "registered": "active",
+        "listed": "pending",
+        "retired": "retired",
+        "cancelled": "cancelled",
+        "on_hold": "suspended"
+    },
+    "methodology_patterns": {
+        "REDD+": "VM0007|VM0009|VM0015|VM0037",
+        "ARR": "VM0005|VM0010|VM0042",
+        "IFM": "VM0011",
+        "ALM": "VM0017|VM0022|VM0032",
+        "Blue_Carbon": "VM0033"
+    },
+    "credit_unit": "VCU",
+    "credit_unit_name": "Verified Carbon Unit",
+    "vintage_format": "YYYY",
+    "api_available": true,
+    "api_version": "3.0",
+    "data_quality_indicators": {
+        "verification_required": true,
+        "third_party_audit": true,
+        "monitoring_frequency": "annual",
+        "buffer_pool_required": ["REDD+", "ARR", "IFM"]
+    }
+}

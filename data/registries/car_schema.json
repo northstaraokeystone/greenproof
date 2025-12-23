@@ -1,0 +1,52 @@
+{
+    "registry": "car",
+    "full_name": "Climate Action Reserve",
+    "url": "https://thereserve2.apx.com",
+    "description": "California-focused carbon offset registry, compliance-grade",
+    "field_mappings": {
+        "project_id": "Project ID",
+        "project_name": "Project Name",
+        "methodology": "Protocol",
+        "vintage_year": "Vintage",
+        "quantity_tco2e": "CRTs Issued",
+        "status": "Status",
+        "country": "Project Location",
+        "verification_body": "Verifier",
+        "issuance_date": "Issuance Date",
+        "retirement_date": "Retirement Date",
+        "project_type": "Project Type",
+        "arb_eligible": "ARB Eligible"
+    },
+    "status_values": {
+        "listed": "active",
+        "completed": "retired",
+        "pending": "pending",
+        "inactivated": "cancelled"
+    },
+    "methodology_patterns": {
+        "Forest": "FP",
+        "Livestock": "LP",
+        "ODS": "ODS",
+        "Organic_Waste": "OWD",
+        "Urban_Forest": "UFP",
+        "Rice": "RP",
+        "Nitrogen": "NMP"
+    },
+    "credit_unit": "CRT",
+    "credit_unit_name": "Climate Reserve Tonne",
+    "vintage_format": "YYYY",
+    "api_available": true,
+    "api_version": "1.5",
+    "data_quality_indicators": {
+        "verification_required": true,
+        "third_party_audit": true,
+        "monitoring_frequency": "annual",
+        "carb_compliance_eligible": true,
+        "invalidation_insurance_required": ["Forest"]
+    },
+    "california_compliance": {
+        "arb_eligible_protocols": ["FP", "LP", "ODS", "OWD"],
+        "buffer_pool_contribution": 0.18,
+        "reversal_risk_rating_required": true
+    }
+}

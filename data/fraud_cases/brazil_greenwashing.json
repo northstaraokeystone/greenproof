@@ -1,0 +1,35 @@
+{
+    "case_id": "brazil-greenwashing-2024",
+    "name": "Operation Greenwashing",
+    "date": "2024-06",
+    "jurisdiction": "Brazil",
+    "description": "Federal Police investigation into fraudulent carbon credit schemes in the Amazon region",
+    "key_facts": {
+        "individuals_charged": 31,
+        "hectares_affected": 400000,
+        "estimated_fraud_value_usd": 180000000,
+        "registries_involved": ["verra"],
+        "methodologies_abused": ["REDD+", "VM0007"]
+    },
+    "fraud_indicators": {
+        "compression_ratio_observed": 0.45,
+        "additionality_failures": true,
+        "permanence_issues": true,
+        "leakage_detected": true,
+        "double_counting": true
+    },
+    "detection_signals": [
+        "Compression ratios significantly below 0.70 threshold",
+        "Multiple claims for overlapping forest areas",
+        "Baseline inflation of 200-400% above realistic levels",
+        "No evidence of community consultation or benefit sharing",
+        "Deforestation continued in adjacent areas (leakage)"
+    ],
+    "lessons_learned": [
+        "REDD+ projects require independent satellite verification",
+        "Community land rights must be verified before credit issuance",
+        "Cross-registry checks essential for Amazon region",
+        "Compression-based detection would have flagged 95% of claims"
+    ],
+    "source": "Brazilian Federal Police Operation Greenwashing Investigation 2024"
+}
