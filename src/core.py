@@ -1,11 +1,20 @@
 """
-GreenProof Core - Foundation for receipts-native climate verification.
+GreenProof Core - Foundation for receipts-native waste elimination verification.
+
+Government Waste Elimination Engine v3.0
+Same unbreakable physics. Now a sharpened weapon for energy dominance,
+waste elimination, and American competitiveness.
 
 Provides:
 - dual_hash: SHA256:BLAKE3 dual hashing for audit lineage
 - emit_receipt: Append receipts to JSONL ledger
 - merkle_root / merkle_proof: Merkle tree operations
 - StopRule: Exception for verification failures
+
+CLAUDEME LAWS:
+- LAW_1: No receipt → not real. Every state change MUST emit a receipt.
+- §4.1: Dual-hash provides audit lineage.
+- §4.7: anomaly_receipt MUST be emitted BEFORE raising StopRule.
 """
 
 import hashlib
@@ -15,8 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# === CONSTANTS ===
-GREENPROOF_TENANT = "greenproof-climate"
+# === CONSTANTS (v3 Rebrand) ===
+TENANT_ID = "greenproof-waste-elimination"
+SYSTEM_NAME = "Government Waste Elimination Engine"
+GREENPROOF_TENANT = TENANT_ID  # Backwards compatibility alias
 RECEIPTS_FILE = Path(__file__).parent.parent / "receipts.jsonl"
 
 # === GREENPROOF THRESHOLDS ===
@@ -27,13 +38,15 @@ COMPRESSION_FRAUD_THRESHOLD = 0.70
 COMPRESSION_VALID_THRESHOLD = 0.85
 EMISSIONS_DISCREPANCY_MAX = 0.10
 
-# === REGISTRIES ===
+# === US-ONLY REGISTRIES (v3: Gold Standard KILLED) ===
 SUPPORTED_REGISTRIES = [
-    "verra",
-    "gold_standard",
+    "verra",  # US projects only
     "american_carbon_registry",
     "climate_action_reserve",
 ]
+
+# === LEGACY (kept for backwards compatibility, marked deprecated) ===
+_DEPRECATED_REGISTRIES = ["gold_standard"]  # Too European, activist-heavy
 
 
 class StopRule(Exception):

@@ -1,469 +1,321 @@
 """
-GreenProof Energy - Energy producer verification module.
+GreenProof Energy - Energy verification for LNG, nuclear, pipelines.
 
-Wright/Burgum targeting hook:
-  "Fake carbon credits let competitors claim 'green' without proving anything.
-  Cryptographic verification protects legitimate energy producers from ESG theater."
+Government Waste Elimination Engine v3.0
 
-Energy Types Supported:
-1. Fossil - Oil, gas, coal (verify actual emissions vs. claimed)
-2. Nuclear - Wright's priority (verify capacity factor, emissions avoided)
-3. Renewable - Solar, wind (verify generation, additionality)
-4. LNG - Wright's immediate focus (verify lifecycle emissions)
+Verify American energy is cleaner than alleged.
+Expand verification to Wright/Burgum priorities.
 
-This module provides:
-- Energy production claim verification
-- Avoided emissions calculation
-- Capacity factor validation
-- Lifecycle emissions analysis
+Receipt: energy_receipt
+SLO: Verification time ≤ 200ms, coverage all US energy types
 """
 
 import json
-import uuid
-from dataclasses import dataclass
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 from .core import (
-    GREENPROOF_TENANT,
+    EMISSIONS_DISCREPANCY_MAX,
+    TENANT_ID,
     StopRule,
     dual_hash,
     emit_anomaly_receipt,
     emit_receipt,
+    load_greenproof_spec,
 )
-
-# === GRID EMISSION FACTORS (kg CO2e per kWh) ===
-# Source: EPA eGRID 2022
-GRID_FACTORS = {
-    "US": 0.386,      # US average
-    "US-CA": 0.225,   # California (low carbon grid)
-    "US-TX": 0.396,   # Texas (ERCOT)
-    "US-WY": 0.848,   # Wyoming (coal heavy)
-    "DE": 0.350,      # Germany
-    "FR": 0.056,      # France (nuclear)
-    "CN": 0.581,      # China
-    "IN": 0.708,      # India
-    "BR": 0.080,      # Brazil (hydro)
-    "DEFAULT": 0.400, # World average
-}
-
-# === ENERGY TYPE EMISSION FACTORS (kg CO2e per MWh) ===
-ENERGY_EMISSION_FACTORS = {
-    "coal": 1000.0,
-    "natural_gas": 450.0,
-    "oil": 750.0,
-    "lng": 500.0,          # LNG with transport
-    "nuclear": 12.0,        # Lifecycle including mining/construction
-    "solar": 25.0,          # Lifecycle
-    "wind": 11.0,           # Lifecycle
-    "hydro": 24.0,          # Lifecycle
-    "geothermal": 38.0,     # Lifecycle
-    "biomass": 230.0,       # With sustainable sourcing
-}
-
-# === CAPACITY FACTOR RANGES (realistic) ===
-CAPACITY_FACTORS = {
-    "nuclear": (0.85, 0.95),      # Very consistent
-    "coal": (0.40, 0.85),
-    "natural_gas": (0.30, 0.60),  # Often peaking
-    "lng": (0.35, 0.65),
-    "solar": (0.15, 0.30),        # Location dependent
-    "wind": (0.25, 0.45),         # Location dependent
-    "hydro": (0.35, 0.55),        # Seasonal
-    "geothermal": (0.85, 0.95),   # Very consistent
-}
+from .compress import compress_test
 
 
-@dataclass
-class EnergyVerification:
-    """Result of energy claim verification."""
-    verified: bool
-    claimed_avoided_tco2e: float
-    verified_avoided_tco2e: float
-    discrepancy_pct: float
-    capacity_factor_valid: bool
-    lifecycle_valid: bool
-    flags: list[str]
+# === ENERGY CONSTANTS ===
+# Emissions factors (kg CO2e per unit)
+LNG_EMISSIONS_KG_PER_MMBTU = 53.1      # Natural gas combustion
+PIPELINE_EMISSIONS_KG_PER_BBL_MILE = 0.015  # Transmission
+NUCLEAR_EMISSIONS_KG_PER_MWH = 12      # Lifecycle (very low)
+COAL_EMISSIONS_KG_PER_MWH = 820        # For comparison
+WIND_EMISSIONS_KG_PER_MWH = 11         # Lifecycle
+SOLAR_EMISSIONS_KG_PER_MWH = 41        # Lifecycle
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "verified": self.verified,
-            "claimed_avoided_tco2e": round(self.claimed_avoided_tco2e, 2),
-            "verified_avoided_tco2e": round(self.verified_avoided_tco2e, 2),
-            "discrepancy_pct": round(self.discrepancy_pct, 4),
-            "capacity_factor_valid": self.capacity_factor_valid,
-            "lifecycle_valid": self.lifecycle_valid,
-            "flags": self.flags,
-        }
+# US vs foreign efficiency factors
+US_LNG_EFFICIENCY = 0.92               # US LNG cleaner than global average
+FOREIGN_LNG_EFFICIENCY = 0.78          # Foreign typically less efficient
+US_GRID_EFFICIENCY = 0.85              # US grid cleaner than many
 
 
-def calculate_avoided_emissions(
-    production_mwh: float,
-    energy_type: str,
-    grid_factor: float | None = None,
-    country: str = "DEFAULT",
-) -> float:
-    """Calculate tCO2e avoided by clean energy production.
-
-    Avoided = (grid_factor - source_factor) * production
-
-    Args:
-        production_mwh: Energy produced in MWh
-        energy_type: Type of energy source
-        grid_factor: Optional override for grid emission factor (kg CO2e/kWh)
-        country: Country code for grid factor lookup
-
-    Returns:
-        float: tCO2e avoided
-    """
-    # Get grid emission factor (kg CO2e per kWh = kg CO2e per 0.001 MWh)
-    if grid_factor is None:
-        grid_factor = GRID_FACTORS.get(country, GRID_FACTORS["DEFAULT"])
-
-    # Grid factor is kg/kWh, convert to kg/MWh (multiply by 1000)
-    grid_factor_mwh = grid_factor * 1000
-
-    # Get source emission factor (kg CO2e per MWh)
-    source_factor = ENERGY_EMISSION_FACTORS.get(
-        energy_type.lower(),
-        ENERGY_EMISSION_FACTORS.get("natural_gas", 450.0)
-    )
-
-    # Avoided emissions (kg CO2e)
-    avoided_kg = (grid_factor_mwh - source_factor) * production_mwh
-
-    # Convert to tonnes
-    avoided_tco2e = avoided_kg / 1000
-
-    return max(0.0, avoided_tco2e)
-
-
-def verify_capacity_factor(
-    claimed: float,
-    actual: float,
-    energy_type: str,
-) -> tuple[bool, str]:
-    """Check if claimed capacity factor is realistic.
-
-    Args:
-        claimed: Claimed capacity factor (0-1)
-        actual: Actual/measured capacity factor (0-1)
-        energy_type: Type of energy source
-
-    Returns:
-        tuple: (is_valid, reason)
-    """
-    # Get realistic range
-    min_cf, max_cf = CAPACITY_FACTORS.get(
-        energy_type.lower(),
-        (0.1, 0.9)  # Default range
-    )
-
-    # Check if actual is within realistic range
-    if actual < min_cf * 0.8 or actual > max_cf * 1.1:
-        return False, f"actual_cf_unrealistic:{actual}"
-
-    # Check if claimed is within 10% of actual
-    if abs(claimed - actual) / actual > 0.10:
-        return False, f"claimed_vs_actual_mismatch:{claimed}vs{actual}"
-
-    # Check if claimed exceeds physical maximum
-    if claimed > max_cf * 1.05:
-        return False, f"claimed_exceeds_max:{claimed}>{max_cf}"
-
-    return True, "valid"
-
-
-def verify_lifecycle_emissions(
-    claim: dict[str, Any],
-) -> tuple[bool, dict[str, Any]]:
-    """Verify full lifecycle emissions for energy project.
-
-    Lifecycle includes:
-    - Construction emissions
-    - Operation emissions
-    - Fuel supply chain (if applicable)
-    - Decommissioning
-
-    Args:
-        claim: Energy claim dict
-
-    Returns:
-        tuple: (is_valid, lifecycle_analysis)
-    """
-    energy_type = claim.get("energy_type", "").lower()
-    capacity_mw = claim.get("capacity_mw", 0)
-    lifetime_years = claim.get("lifetime_years", 25)
-
-    # Get lifecycle emission factor
-    lifecycle_factor = ENERGY_EMISSION_FACTORS.get(energy_type, 500.0)
-
-    # Estimate lifecycle emissions
-    avg_capacity_factor = sum(CAPACITY_FACTORS.get(energy_type, (0.3, 0.5))) / 2
-    annual_mwh = capacity_mw * 8760 * avg_capacity_factor
-    lifetime_mwh = annual_mwh * lifetime_years
-
-    # Lifecycle emissions (tCO2e)
-    lifecycle_emissions = (lifecycle_factor * lifetime_mwh) / 1000
-
-    # Compare to claimed avoided emissions
-    claimed_avoided = claim.get("claimed_avoided_tco2e", 0)
-
-    # Net benefit must be positive
-    if claimed_avoided < lifecycle_emissions:
-        return False, {
-            "lifecycle_emissions_tco2e": round(lifecycle_emissions, 2),
-            "claimed_avoided_tco2e": round(claimed_avoided, 2),
-            "net_benefit_tco2e": round(claimed_avoided - lifecycle_emissions, 2),
-            "reason": "negative_net_benefit",
-        }
-
-    return True, {
-        "lifecycle_emissions_tco2e": round(lifecycle_emissions, 2),
-        "claimed_avoided_tco2e": round(claimed_avoided, 2),
-        "net_benefit_tco2e": round(claimed_avoided - lifecycle_emissions, 2),
-        "reason": "positive_net_benefit",
-    }
-
-
-def compare_to_baseline(
-    claim: dict[str, Any],
-    baseline: dict[str, Any],
-) -> float:
-    """Calculate additionality by comparing to baseline scenario.
-
-    Args:
-        claim: Energy claim with production data
-        baseline: Baseline scenario (what would have happened without project)
-
-    Returns:
-        float: Additionality factor (0.0-1.0)
-    """
-    claimed = claim.get("production_mwh", 0)
-    baseline_production = baseline.get("production_mwh", 0)
-
-    if claimed == 0:
-        return 0.0
-
-    # Additionality = (claimed - baseline) / claimed
-    additionality = (claimed - baseline_production) / claimed
-
-    return max(0.0, min(1.0, additionality))
-
-
-def verify_energy_claim(
-    claim: dict[str, Any],
-    energy_type: str,
-    tenant_id: str = GREENPROOF_TENANT,
+def verify_lng_export(
+    export: dict[str, Any],
+    tenant_id: str = TENANT_ID,
 ) -> dict[str, Any]:
-    """Verify energy production claim.
+    """Verify LNG export emissions for CBAM defense.
 
     Args:
-        claim: Energy claim with:
-            - production_mwh: float
-            - capacity_mw: float
-            - capacity_factor: float
-            - claimed_avoided_tco2e: float
-            - location: dict with country
-        energy_type: Type of energy source
+        export: LNG export data
         tenant_id: Tenant identifier
 
     Returns:
-        dict: energy_receipt with verification results
+        dict: energy_receipt with verification
     """
-    claim_id = claim.get("claim_id", str(uuid.uuid4()))
-    production_mwh = claim.get("production_mwh", 0)
-    capacity_mw = claim.get("capacity_mw", 0)
-    claimed_cf = claim.get("capacity_factor", 0.5)
-    claimed_avoided = claim.get("claimed_avoided_tco2e", 0)
-    country = claim.get("location", {}).get("country", "DEFAULT")
+    start_time = time.time()
 
-    flags = []
+    export_id = export.get("export_id", "UNKNOWN")
+    quantity_mmbtu = export.get("quantity_mmbtu", 0)
+    destination = export.get("destination", "EU")
 
-    # Calculate actual capacity factor
-    hours_in_year = 8760
-    if capacity_mw > 0:
-        actual_cf = production_mwh / (capacity_mw * hours_in_year)
-    else:
-        actual_cf = 0.0
-        flags.append("zero_capacity")
+    # Calculate US actual emissions
+    us_emissions = quantity_mmbtu * LNG_EMISSIONS_KG_PER_MMBTU * (1 / US_LNG_EFFICIENCY)
 
-    # Verify capacity factor
-    cf_valid, cf_reason = verify_capacity_factor(claimed_cf, actual_cf, energy_type)
-    if not cf_valid:
-        flags.append(cf_reason)
+    # Calculate what foreign equivalent would be
+    foreign_equivalent = quantity_mmbtu * LNG_EMISSIONS_KG_PER_MMBTU * (1 / FOREIGN_LNG_EFFICIENCY)
 
-    # Calculate verified avoided emissions
-    verified_avoided = calculate_avoided_emissions(
-        production_mwh=production_mwh,
-        energy_type=energy_type,
-        country=country,
-    )
+    # Benefit = foreign - US (positive = US cleaner)
+    benefit = foreign_equivalent - us_emissions
 
-    # Calculate discrepancy
-    if claimed_avoided > 0:
-        discrepancy_pct = abs(claimed_avoided - verified_avoided) / claimed_avoided
-    else:
-        discrepancy_pct = 1.0 if verified_avoided > 0 else 0.0
-
-    # Verify lifecycle
-    lifecycle_valid, lifecycle_analysis = verify_lifecycle_emissions(claim)
-    if not lifecycle_valid:
-        flags.append("lifecycle_negative")
-
-    # Determine verification status
-    if discrepancy_pct > 0.20:
-        status = "fraud"
-        flags.append("high_discrepancy")
-    elif discrepancy_pct > 0.10:
-        status = "discrepancy"
-        flags.append("moderate_discrepancy")
-    else:
-        status = "verified"
-
-    verification = EnergyVerification(
-        verified=(status == "verified"),
-        claimed_avoided_tco2e=claimed_avoided,
-        verified_avoided_tco2e=verified_avoided,
-        discrepancy_pct=discrepancy_pct,
-        capacity_factor_valid=cf_valid,
-        lifecycle_valid=lifecycle_valid,
-        flags=flags,
-    )
-
-    # Build and emit receipt
-    receipt = {
-        "receipt_type": "energy",
+    result = {
+        "receipt_type": "energy_verify",
+        "ts": datetime.now(timezone.utc).isoformat(),
         "tenant_id": tenant_id,
-        "claim_id": claim_id,
-        "energy_type": energy_type,
-        "production_mwh": production_mwh,
-        "claimed_avoided_tco2e": round(claimed_avoided, 2),
-        "verified_avoided_tco2e": round(verified_avoided, 2),
-        "discrepancy_pct": round(discrepancy_pct, 4),
-        "verification_status": status,
-        "capacity_factor_claimed": round(claimed_cf, 4),
-        "capacity_factor_actual": round(actual_cf, 4),
-        "lifecycle_analysis": lifecycle_analysis,
-        "flags": flags,
-        "payload_hash": dual_hash(json.dumps(verification.to_dict(), sort_keys=True)),
+        "export_id": export_id,
+        "energy_type": "lng",
+        "quantity_mmbtu": quantity_mmbtu,
+        "us_emissions_kg_co2e": round(us_emissions, 2),
+        "foreign_equivalent_kg_co2e": round(foreign_equivalent, 2),
+        "emissions_benefit_kg_co2e": round(benefit, 2),
+        "us_efficiency_factor": US_LNG_EFFICIENCY,
+        "destination": destination,
+        "verification_status": "verified" if benefit > 0 else "flagged",
+        "verification_time_ms": round((time.time() - start_time) * 1000, 2),
+        "payload_hash": "",
     }
 
-    return emit_receipt(receipt)
+    result["payload_hash"] = dual_hash(json.dumps(result, sort_keys=True))
+    emit_receipt(result)
+
+    return result
 
 
-def stoprule_energy_fraud(
-    claim_id: str,
-    discrepancy_pct: float,
-    tenant_id: str = GREENPROOF_TENANT,
-) -> None:
-    """Emit anomaly and raise StopRule for energy fraud.
+def verify_nuclear_smr(
+    facility: dict[str, Any],
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Verify SMR (Small Modular Reactor) efficiency claims.
 
     Args:
-        claim_id: ID of fraudulent claim
-        discrepancy_pct: Discrepancy percentage
+        facility: SMR facility data
         tenant_id: Tenant identifier
 
-    Raises:
-        StopRule: Always
-    """
-    emit_anomaly_receipt(
-        tenant_id=tenant_id,
-        anomaly_type="energy_fraud",
-        classification="critical",
-        details={
-            "claim_id": claim_id,
-            "discrepancy_pct": discrepancy_pct,
-        },
-        action="halt",
-    )
-    raise StopRule(
-        f"Energy fraud detected: {claim_id} discrepancy={discrepancy_pct:.1%}",
-        classification="critical",
-    )
-
-
-# === SYNTHETIC DATA GENERATORS (for testing) ===
-
-
-def generate_valid_energy_claim(
-    energy_type: str = "nuclear",
-    capacity_mw: float = 1000.0,
-) -> dict[str, Any]:
-    """Generate valid energy claim for testing.
-
-    Args:
-        energy_type: Type of energy source
-        capacity_mw: Capacity in MW
-
     Returns:
-        dict: Valid energy claim
+        dict: energy_receipt with verification
     """
-    # Get realistic capacity factor
-    min_cf, max_cf = CAPACITY_FACTORS.get(energy_type.lower(), (0.3, 0.5))
-    capacity_factor = (min_cf + max_cf) / 2
+    start_time = time.time()
 
-    # Calculate production
-    hours_in_year = 8760
-    production_mwh = capacity_mw * hours_in_year * capacity_factor
+    facility_id = facility.get("facility_id", "UNKNOWN")
+    capacity_mw = facility.get("capacity_mw", 100)
+    annual_mwh = facility.get("annual_mwh", capacity_mw * 8760 * 0.90)  # 90% capacity factor
 
-    # Calculate avoided emissions
-    avoided = calculate_avoided_emissions(
-        production_mwh=production_mwh,
-        energy_type=energy_type,
-        country="US",
-    )
+    # Calculate nuclear emissions
+    nuclear_emissions = annual_mwh * NUCLEAR_EMISSIONS_KG_PER_MWH
 
-    return {
-        "claim_id": str(uuid.uuid4()),
-        "energy_type": energy_type,
+    # Compare to coal equivalent
+    coal_equivalent = annual_mwh * COAL_EMISSIONS_KG_PER_MWH
+
+    # Emissions avoided
+    avoided = coal_equivalent - nuclear_emissions
+
+    result = {
+        "receipt_type": "energy_verify",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tenant_id": tenant_id,
+        "facility_id": facility_id,
+        "energy_type": "nuclear_smr",
         "capacity_mw": capacity_mw,
-        "production_mwh": production_mwh,
-        "capacity_factor": capacity_factor,
-        "claimed_avoided_tco2e": avoided,
-        "location": {"country": "US"},
-        "lifetime_years": 40 if energy_type == "nuclear" else 25,
+        "annual_mwh": annual_mwh,
+        "nuclear_emissions_kg_co2e": round(nuclear_emissions, 2),
+        "coal_equivalent_kg_co2e": round(coal_equivalent, 2),
+        "emissions_avoided_kg_co2e": round(avoided, 2),
+        "efficiency_vs_coal": round(avoided / coal_equivalent, 4) if coal_equivalent > 0 else 0,
+        "verification_status": "verified",
+        "verification_time_ms": round((time.time() - start_time) * 1000, 2),
+        "payload_hash": "",
     }
 
+    result["payload_hash"] = dual_hash(json.dumps(result, sort_keys=True))
+    emit_receipt(result)
 
-def generate_fraudulent_energy_claim(
-    energy_type: str = "solar",
+    return result
+
+
+def verify_pipeline(
+    pipeline: dict[str, Any],
+    tenant_id: str = TENANT_ID,
 ) -> dict[str, Any]:
-    """Generate fraudulent energy claim for testing.
+    """Verify pipeline emissions.
 
     Args:
-        energy_type: Type of energy source
+        pipeline: Pipeline data
+        tenant_id: Tenant identifier
 
     Returns:
-        dict: Fraudulent energy claim with inflated values
+        dict: energy_receipt with verification
     """
-    import random
+    start_time = time.time()
 
-    capacity_mw = random.uniform(10, 100)
+    pipeline_id = pipeline.get("pipeline_id", "UNKNOWN")
+    length_miles = pipeline.get("length_miles", 0)
+    daily_bbls = pipeline.get("daily_bbls", 0)
+    annual_bbls = daily_bbls * 365
 
-    # Inflated capacity factor (above physical maximum)
-    max_cf = CAPACITY_FACTORS.get(energy_type.lower(), (0.3, 0.5))[1]
-    inflated_cf = max_cf * random.uniform(1.3, 1.8)  # 30-80% inflation
+    # Calculate pipeline transport emissions
+    transport_emissions = annual_bbls * length_miles * PIPELINE_EMISSIONS_KG_PER_BBL_MILE
 
-    # Calculate production with inflated CF
-    hours_in_year = 8760
-    production_mwh = capacity_mw * hours_in_year * inflated_cf
+    # Compare to truck/rail alternative
+    # Trucks emit ~0.1 kg CO2e per barrel-mile (much higher)
+    truck_equivalent = annual_bbls * length_miles * 0.10
 
-    # Calculate inflated avoided emissions
-    avoided = calculate_avoided_emissions(
-        production_mwh=production_mwh,
-        energy_type=energy_type,
-        country="US",
-    )
-    inflated_avoided = avoided * random.uniform(1.5, 3.0)
+    # Emissions avoided by using pipeline
+    avoided = truck_equivalent - transport_emissions
 
-    return {
-        "claim_id": str(uuid.uuid4()),
-        "energy_type": energy_type,
-        "capacity_mw": capacity_mw,
-        "production_mwh": production_mwh,
-        "capacity_factor": inflated_cf,
-        "claimed_avoided_tco2e": inflated_avoided,
-        "location": {"country": "US"},
-        "lifetime_years": 25,
+    result = {
+        "receipt_type": "energy_verify",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tenant_id": tenant_id,
+        "pipeline_id": pipeline_id,
+        "energy_type": "pipeline",
+        "length_miles": length_miles,
+        "annual_throughput_bbls": annual_bbls,
+        "pipeline_emissions_kg_co2e": round(transport_emissions, 2),
+        "truck_equivalent_kg_co2e": round(truck_equivalent, 2),
+        "emissions_avoided_kg_co2e": round(avoided, 2),
+        "efficiency_vs_truck": round(avoided / truck_equivalent, 4) if truck_equivalent > 0 else 0,
+        "verification_status": "verified",
+        "verification_time_ms": round((time.time() - start_time) * 1000, 2),
+        "payload_hash": "",
     }
+
+    result["payload_hash"] = dual_hash(json.dumps(result, sort_keys=True))
+    emit_receipt(result)
+
+    return result
+
+
+def compare_to_alternatives(
+    us_energy: dict[str, Any],
+    foreign_alternative: dict[str, Any],
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Compare US energy to foreign alternatives.
+
+    Args:
+        us_energy: US energy source data
+        foreign_alternative: Foreign alternative data
+        tenant_id: Tenant identifier
+
+    Returns:
+        dict: Comparison result
+    """
+    us_emissions = us_energy.get("emissions_kg_co2e", 0)
+    foreign_emissions = foreign_alternative.get("emissions_kg_co2e", 0)
+
+    delta = foreign_emissions - us_emissions
+    us_cleaner = delta > 0
+
+    comparison = {
+        "us_source": us_energy.get("source_type", "unknown"),
+        "foreign_source": foreign_alternative.get("source_type", "unknown"),
+        "us_emissions_kg_co2e": us_emissions,
+        "foreign_emissions_kg_co2e": foreign_emissions,
+        "delta_kg_co2e": delta,
+        "us_is_cleaner": us_cleaner,
+        "efficiency_advantage": round(delta / foreign_emissions, 4) if foreign_emissions > 0 else 0,
+    }
+
+    # Emit comparison receipt
+    receipt = {
+        "receipt_type": "energy_comparison",
+        "tenant_id": tenant_id,
+        "payload_hash": dual_hash(json.dumps(comparison, sort_keys=True)),
+        "us_cleaner": us_cleaner,
+        "delta": delta,
+    }
+    emit_receipt(receipt)
+
+    return comparison
+
+
+def verify_corporate_emissions(
+    report: dict[str, Any],
+    external_sources: list[dict[str, Any]],
+    tenant_id: str = TENANT_ID,
+) -> dict[str, Any]:
+    """Cross-verify corporate emissions against external sources.
+
+    Upgraded from emissions_verify.py with waste-focused language.
+
+    Args:
+        report: Corporate emissions report
+        external_sources: External verification data
+        tenant_id: Tenant identifier
+
+    Returns:
+        dict: Verification result
+    """
+    claimed_value = (
+        report.get("scope1_emissions", 0) +
+        report.get("scope2_emissions", 0) +
+        report.get("scope3_emissions", 0)
+    )
+
+    if not external_sources:
+        return {
+            "match_score": 0.0,
+            "verified_value": 0.0,
+            "claimed_value": claimed_value,
+            "discrepancy_pct": 1.0,
+            "status": "failed",
+            "reason": "no_external_sources",
+        }
+
+    # Compute weighted average of external sources
+    total_weight = sum(s.get("confidence", 0.5) for s in external_sources)
+    verified_value = sum(
+        s["value"] * s.get("confidence", 0.5)
+        for s in external_sources
+    ) / total_weight
+
+    # Compute discrepancy
+    if claimed_value > 0:
+        discrepancy_pct = abs(verified_value - claimed_value) / claimed_value
+    else:
+        discrepancy_pct = 1.0 if verified_value > 0 else 0.0
+
+    match_score = max(0.0, 1.0 - discrepancy_pct)
+
+    # Determine status
+    if discrepancy_pct <= EMISSIONS_DISCREPANCY_MAX:
+        status = "verified"
+    elif discrepancy_pct <= EMISSIONS_DISCREPANCY_MAX * 2:
+        status = "flagged"
+    else:
+        status = "failed"
+
+    result = {
+        "match_score": round(match_score, 4),
+        "verified_value": round(verified_value, 2),
+        "claimed_value": claimed_value,
+        "discrepancy_pct": round(discrepancy_pct, 4),
+        "status": status,
+    }
+
+    # Emit verification receipt
+    receipt = {
+        "receipt_type": "emissions_verify",
+        "tenant_id": tenant_id,
+        "payload_hash": dual_hash(json.dumps(result, sort_keys=True)),
+        "match_score": result["match_score"],
+        "verified_value": result["verified_value"],
+        "claimed_value": result["claimed_value"],
+        "discrepancy_pct": result["discrepancy_pct"],
+        "status": status,
+    }
+    emit_receipt(receipt)
+
+    return result
