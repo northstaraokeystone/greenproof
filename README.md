@@ -17,9 +17,9 @@
 
 ---
 
-## How It Works 
+## How It Works
 
-Think of it like a **lie detector for numbers**.
+Think of it like a **pattern detector for numbers**.
 
 **Real data is boring.** When a factory actually measures its emissions, the numbers follow patterns. Monday looks like Tuesday. Summer looks like last summer. Real physics is predictable.
 
@@ -33,7 +33,7 @@ Imagine squeezing a sponge:
 
 We do the same thing with data:
 - **Compression ratio ≥ 0.85** → Data follows physics → **VERIFIED**
-- **Compression ratio < 0.70** → Data is random/invented → **FRAUD SIGNAL**
+- **Compression ratio < 0.70** → Data shows anomaly patterns → **NEEDS REVIEW**
 
 That's it. No trust required. No self-reporting. Just math.
 
@@ -47,7 +47,7 @@ That's it. No trust required. No self-reporting. Just math.
 | Ask "is this real?" | Measure "does this compress like reality?" |
 | Months of audits | Milliseconds of computation |
 | Humans checking boxes | Math checking patterns |
-| Easy to game | Impossible to game (you can't fake physics) |
+| Easy to game | Hard to game (you can't fake physics) |
 
 ### The Core Insight
 
@@ -64,23 +64,32 @@ This isn't a new algorithm. It's a fundamental property of information theory. R
 | Module | Purpose |
 |--------|---------|
 | `core.py` | Foundation: cryptographic receipts, dual-hash signatures, merkle trees |
-| `compress.py` | Compression-based fraud detection engine |
+| `compress.py` | Compression-based anomaly detection engine |
 | `registry.py` | US registry integration (Verra, ACR, Climate Action Reserve) |
-| `detect.py` | Waste and fraud pattern detection |
+| `detect.py` | Waste and anomaly pattern detection |
 | `trading.py` | Verified asset trading infrastructure |
 | `prove.py` | Cryptographic proof chains and merkle verification |
+
+### Compliance & Legal Modules
+
+| Module | Purpose |
+|--------|---------|
+| `compliance/sandbox.py` | Simulation sandbox for safe testing (no external calls) |
+| `compliance/disclaimers.py` | Standardized legal disclaimers for all outputs |
+| `legal/jurisdiction.py` | US-only data filter (avoids GDPR conflicts) |
+| `legal/logging.py` | Evidentiary logging for audit trails |
 
 ### Application Modules
 
 | Module | Purpose |
 |--------|---------|
-| `doge.py` | Federal grant waste detection ($50B+ EPA/DOE spending) |
+| `doge.py` | Federal grant analysis ($50B+ EPA/DOE spending) |
 | `cbam.py` | EU tariff dispute defense tool |
 | `permit.py` | Permitting acceleration with pre-verified templates |
 | `energy.py` | LNG, nuclear, and pipeline verification |
 | `vehicles.py` | EV credit verification and legacy automaker analysis |
 | `spacex.py` | Launch emissions vs. avoided emissions calculator |
-| `expose.py` | Competitor ESG claim scanner |
+| `benchmark.py` | Compression anomaly benchmarking (CAS scores) |
 | `sim.py` | Monte Carlo simulation harness |
 
 ---
@@ -91,11 +100,11 @@ This isn't a new algorithm. It's a fundamental property of information theory. R
 
 | Metric | Target | Achieved |
 |--------|--------|----------|
-| Fraud detection rate | ≥90% | 100% |
+| Anomaly detection rate | ≥90% | 100% |
 | False positive rate | <5% | <1% |
 | Processing time per claim | <50ms | <10ms |
 | Double-count detection | ≥95% | 100% |
-| Stress test (40% fraud, 25% duplicates) | Pass | Pass |
+| Stress test (40% anomaly, 25% duplicates) | Pass | Pass |
 
 ### Verification Methods
 
@@ -105,24 +114,33 @@ This isn't a new algorithm. It's a fundamental property of information theory. R
 | Dual-Hash Audit Trail | Tamper detection | Every record gets SHA256 + BLAKE3 signatures |
 | Cross-Registry Check | Double-counting | Same credit can't exist in multiple registries |
 | Merkle Proof Chain | Audit lineage | Cryptographic proof of every state change |
+| Evidentiary Logging | Legal safe harbor | Timestamped logs prove simulation vs. live runs |
 
 ### Detection Thresholds
 
 ```
 VERIFIED:     compression_ratio >= 0.85
-SUSPECT:      compression_ratio 0.70 - 0.85
-FRAUD_SIGNAL: compression_ratio < 0.70
+ELEVATED:     compression_ratio 0.70 - 0.85
+SIGNIFICANT:  compression_ratio < 0.70
 ```
+
+### Compression Anomaly Score (CAS)
+
+Benchmark analysis uses a neutral 0.0-1.0 scoring system:
+- **CAS 0.0-0.3**: Normal compression patterns
+- **CAS 0.3-0.6**: Elevated anomaly indicators
+- **CAS 0.6-0.8**: Significant deviation from expected patterns
+- **CAS 0.8-1.0**: High anomaly score (warrants investigation)
 
 ### 8 Mandatory Test Scenarios (All Pass)
 
-1. **BASELINE** - Normal operation, zero fraud
-2. **WASTE_INJECTION** - 20% fake claims injected, ≥90% caught
+1. **BASELINE** - Normal operation, zero anomalies
+2. **WASTE_INJECTION** - 20% anomalous claims injected, ≥90% caught
 3. **DOUBLE_COUNTING** - 15% duplicate credits, ≥95% caught
-4. **TRADING_INTEGRITY** - Zero fraud reaches marketplace
+4. **TRADING_INTEGRITY** - Zero unverified claims reach marketplace
 5. **ENERGY_VERIFICATION** - LNG, nuclear, pipeline claims validated
-6. **STRESS** - 40% fraud + 25% duplicates + 10ms time limit
-7. **DOGE_AUDIT** - Federal grant waste detection
+6. **STRESS** - 40% anomalies + 25% duplicates + 10ms time limit
+7. **DOGE_AUDIT** - Federal grant analysis
 8. **CBAM_DEFENSE** - EU tariff dispute evidence
 
 ---
@@ -133,10 +151,24 @@ FRAUD_SIGNAL: compression_ratio < 0.70
 
 **Problem**: $50B+ in EPA/DOE grants have weak verification.
 
-**Solution**: Real-time dashboard showing which grants have physics-backed claims vs. which are "trust me" paperwork.
+**Solution**: Probability-based analysis showing which grants have physics-backed claims vs. which warrant further review. Uses entropy thresholds and confidence levels.
 
 ```bash
+# Run in simulation mode (default, safe)
 python cli.py --doge_audit
+
+# Generate compliance report
+python cli.py --compliance_report
+```
+
+### For Benchmarking Claims
+
+**Problem**: Need to analyze environmental claims without making accusations.
+
+**Solution**: Compression Anomaly Score (CAS) provides neutral 0.0-1.0 benchmarks. No labels, just measurements.
+
+```bash
+python cli.py --benchmark_analysis
 ```
 
 ### For Energy Policy
@@ -153,7 +185,7 @@ python cli.py --permit_check
 
 **Problem**: EU Carbon Border Adjustment Mechanism (CBAM) will tariff US exports based on claimed emissions. EU can claim our products are "dirtier" than theirs.
 
-**Solution**: Physics-verified emissions data that can't be disputed. If the compression ratio proves it's real, their claims are irrelevant.
+**Solution**: Physics-verified emissions data with cryptographic proofs. If the compression ratio proves it's real, their claims are irrelevant.
 
 ```bash
 python cli.py --cbam_verify
@@ -167,15 +199,29 @@ python cli.py --cbam_verify
 # Run all 8 test scenarios
 python cli.py --run_scenarios
 
-# DOGE fraud audit demo
+# DOGE analysis demo (simulation mode)
 python cli.py --doge_audit
 
-# Full verification pipeline
+# Benchmark analysis demo
+python cli.py --benchmark_analysis
+
+# Generate legal compliance report
+python cli.py --compliance_report
+
+# Full verification pipeline (requires confirmation)
 python cli.py --full_pipeline
 
 # Run unit tests
 python -m pytest tests/
 ```
+
+### Simulation Mode
+
+By default, all operations run in **simulation mode**. This means:
+- No external API calls are made
+- Synthetic data is used for testing
+- All outputs are watermarked as simulated
+- Safe for demos and development
 
 ---
 
@@ -187,14 +233,21 @@ Every function follows three laws:
 2. **Dual-hash everything.** SHA256 + BLAKE3 for tamper-proof audit trails.
 3. **Anomaly before stop.** If something's wrong, log it before halting.
 
+### Legal Safeguards
+
+- **Simulation by default**: All analysis runs in sandbox mode unless explicitly authorized
+- **US-only data**: Jurisdictional fencing filters out non-US data (avoids GDPR conflicts)
+- **Evidentiary logging**: Every operation is timestamped and hashed for audit trails
+- **Neutral scoring**: CAS scores (0.0-1.0) instead of accusatory labels
+
 ---
 
 ## Summary
 
-**GreenProof answers one question: Is this environmental claim backed by real physics, or is it made up?**
+**GreenProof answers one question: Is this environmental claim backed by real physics, or does it need more review?**
 
 - Real data compresses predictably (ratio ≥ 0.85)
-- Fake data doesn't compress well (ratio < 0.70)
+- Anomalous data doesn't compress well (ratio < 0.70)
 - No trust required. No auditors. No paperwork. Just math.
 
 **$50B+ in federal grants. $8B+ in trade exposure. One physics test.**
