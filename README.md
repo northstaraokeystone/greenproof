@@ -17,7 +17,7 @@
 
 ---
 
-## How It Works (Simple Version)
+## How It Works 
 
 Think of it like a **lie detector for numbers**.
 
